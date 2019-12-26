@@ -6,6 +6,7 @@
 
 struct posix_state {
 	struct pollfd* fds;
+	void** userdata;
 
 	uint32_t max_fds;
 	uint32_t num_fds;
@@ -19,8 +20,12 @@ static void* posix_new_state(void)
 
 	self->max_fds = 128;
 	self->fds = malloc(sizeof(*self->fds) * self->max_fds);
-	if (!self->fds)
+	self->userdata = malloc(sizeof(*self->userdata) * self->max_fds);
+	if (!self->fds || !self->userdata) {
+		free(self->fds);
+		free(self->userdata);
 		goto failure;
+	}
 
 	return self;
 
@@ -31,7 +36,7 @@ failure:
 
 static int posix__find_fd(struct posix_state* self, int fd)
 {
-	for (int i = 0; i < self->num_fds; ++i)
+	for (uint32_t i = 0; i < self->num_fds; ++i)
 		if (self->fds[i].fd == fd)
 			return i;
 
@@ -52,24 +57,33 @@ int posix_poll(void* state, int timeout)
 	return poll(self->fds, self->num_fds, timeout);
 }
 
-int posix_add_fd(void* state, int fd, uint32_t event_mask)
+int posix_add_fd(void* state, int fd, uint32_t event_mask, void* userdata)
 {
 	struct posix_state* self = state;
 
 	if (self->num_fds >= self->max_fds) {
 		uint32_t new_max = self->max_fds * 2;
 		struct pollfd* fds = realloc(self->fds, sizeof(*fds) * new_max);
-		if (!fds)
+		void** uds = realloc(self->userdata, sizeof(*uds) * new_max);
+		if (!fds || !userdata) {
+			free(fds);
+			free(userdata);
 			return -1;
+		}
 
 		self->fds = fds;
+		self->userdata = uds;
 		self->max_fds = new_max;
 	}
 
-	struct pollfd* event = &self->fds[self->num_fds++];
+	struct pollfd* event = &self->fds[self->num_fds];
 	event->events = event_mask;
 	event->revents = 0;
 	event->fd = fd;
+
+	self->userdata[self->num_fds] = userdata;
+
+	self->num_fds++;
 
 	return 0;
 }
@@ -95,7 +109,10 @@ int posix_del_fd(void* state, int fd)
 	if (index < 0)
 		return -1;
 
-	self->fds[index] = self->fds[--self->num_fds];
+	self->num_fds--;
+
+	self->fds[index] = self->fds[self->num_fds];
+	self->userdata[index] = self->userdata[self->num_fds];
 
 	return 0;
 }
