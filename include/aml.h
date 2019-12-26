@@ -8,12 +8,19 @@ struct aml_handler;
 struct aml_timer;
 struct aml_ticker;
 
+struct aml_fd_event {
+	int fd;
+	uint32_t event_mask;
+	void* userdata;
+};
+
 struct aml_backend {
 	void* (*new_state)(void);
 	void (*del_state)(void* state);
-	int (*poll)(void* state, int timeout);
-	int (*add_fd)(void* state, int fd, uint32_t event_mask, void* userdata);
-	int (*mod_fd)(void* state, int fd, uint32_t event_mask);
+	int (*poll)(void* state, struct aml_fd_event** revents,
+                    size_t* revents_len, int timeout);
+	int (*add_fd)(void* state, const struct aml_fd_event*);
+	int (*mod_fd)(void* state, const struct aml_fd_event*);
 	int (*del_fd)(void* state, int fd);
 };
 
@@ -46,8 +53,13 @@ struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn,
 
 int aml_get_fd(const void* obj);
 
-void aml_set_userdata(void* obj, void* userdata);
+void aml_set_userdata(void* obj, void* userdata, aml_free_fn);
 void* aml_get_userdata(const void* obj);
+
+void aml_set_event_mask(void* obj);
+void aml_get_event_mask(const void* obj);
+
+uint32_t aml_get_revents(const void* obj);
 
 int aml_start(struct aml*, void* obj);
 int aml_stop(struct aml*, void* obj);
