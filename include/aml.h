@@ -34,10 +34,12 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size);
 void aml_set_default(struct aml*);
 struct aml* aml_get_default(void);
 
-int aml_run_once(struct aml*);
+int aml_run_once(struct aml*, int timeout);
 
 int aml_run(struct aml*);
 void aml_exit(struct aml*);
+
+void aml_interrupt(struct aml*);
 
 void aml_ref(void* obj);
 void aml_unref(void* obj);
