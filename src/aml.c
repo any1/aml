@@ -392,9 +392,14 @@ void aml__handle_timeout(struct aml* self)
 	aml_unref(timer);
 }
 
+bool aml__event_is_self_pipe(struct aml* self, struct aml_fd_event* ev)
+{
+	return ev->fd == self->self_pipe[PIPE_READ_END];
+}
+
 void aml__handle_fd_event(struct aml* self, struct aml_fd_event* ev)
 {
-	if (ev->fd == self->self_pipe[PIPE_READ_END]) {
+	if (aml__event_is_self_pipe(self, ev)) {
 		char dummy[256];
 		read(self->self_pipe[PIPE_READ_END], dummy, sizeof(dummy));
 		return;
@@ -428,7 +433,7 @@ int aml_run_once(struct aml* self, int timeout)
 	for (int i = 0; i < nfds; ++i) {
 		struct aml_fd_event* ev = &self->revents[i];
 
-		if (ev->userdata)
+		if (!aml__event_is_self_pipe(self, ev) && ev->userdata)
 			aml_ref(ev->userdata);
 	}
 
@@ -437,7 +442,7 @@ int aml_run_once(struct aml* self, int timeout)
 
 		aml__handle_fd_event(self, ev);
 
-		if (ev->userdata)
+		if (!aml__event_is_self_pipe(self, ev) && ev->userdata)
 			aml_unref(ev->userdata);
 	}
 
