@@ -7,6 +7,7 @@ struct aml;
 struct aml_handler;
 struct aml_timer;
 struct aml_ticker;
+struct aml_signal;
 
 struct aml_fd_event {
 	int fd;
@@ -51,6 +52,9 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn,
                                 void* userdata, aml_free_fn);
 
 struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn,
+                                  void* userdata, aml_free_fn);
+
+struct aml_signal* aml_signal_new(int signo, aml_callback_fn,
                                   void* userdata, aml_free_fn);
 
 int aml_get_fd(const void* obj);

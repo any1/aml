@@ -77,15 +77,18 @@ int posix_poll(void* state, struct aml_fd_event** revents, size_t* revents_len,
 		*revents_len = new_len;
 	}
 
+	uint32_t c = 0;
 	for (uint32_t i = 0; i < self->num_fds; ++i)
 		if (self->fds[i].revents) {
-			struct aml_fd_event* ev = &(*revents)[i];
+			struct aml_fd_event* ev = &(*revents)[c++];
 			struct pollfd* pfd = &self->fds[i];
 
 			ev->fd = pfd->fd;
 			ev->event_mask = pfd->revents;
-			ev->userdata = &self->userdata[i];
+			ev->userdata = self->userdata[i];
 		}
+
+	assert((int)c == nfds);
 
 	return nfds;
 }
@@ -98,9 +101,9 @@ int posix_add_fd(void* state, const struct aml_fd_event* fdev)
 		uint32_t new_max = self->max_fds * 2;
 		struct pollfd* fds = realloc(self->fds, sizeof(*fds) * new_max);
 		void** uds = realloc(self->userdata, sizeof(*uds) * new_max);
-		if (!fds || !fdev->userdata) {
+		if (!fds || !uds) {
 			free(fds);
-			free(fdev->userdata);
+			free(uds);
 			return -1;
 		}
 
