@@ -10,6 +10,8 @@
 #include "aml.h"
 #include "sys/queue.h"
 
+#define EXPORT __attribute__((visibility("default")))
+
 #define EVENT_MASK_DEFAULT (POLLIN | POLLPRI)
 
 #define PIPE_READ_END 0
@@ -75,7 +77,21 @@ struct aml {
 	struct aml_timer_list timer_list;
 };
 
+static struct aml* aml__default = NULL;
+
 extern struct aml_backend posix_backend;
+
+EXPORT
+void aml_set_default(struct aml* aml)
+{
+	aml__default = aml;
+}
+
+EXPORT
+struct aml* aml_get_default(void)
+{
+	return aml__default;
+}
 
 static int aml__poll(struct aml* self, int timeout)
 {
@@ -111,6 +127,7 @@ static uint64_t gettime_ms(void)
 	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 }
 
+EXPORT
 struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 {
 	struct aml* self = calloc(1, sizeof(*self));
@@ -157,12 +174,14 @@ failure:
 	return NULL;
 }
 
+EXPORT
 void aml_interrupt(struct aml* self)
 {
 	char byte = 0;
 	write(self->self_pipe[PIPE_WRITE_END], &byte, 1);
 }
 
+EXPORT
 struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
                                     void* userdata, aml_free_fn free_fn)
 {
@@ -182,6 +201,7 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 	return self;
 }
 
+EXPORT
 struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
                                 void* userdata, aml_free_fn free_fn)
 {
@@ -200,6 +220,7 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
 	return self;
 }
 
+EXPORT
 struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn callback,
                                   void* userdata, aml_free_fn free_fn)
 {
@@ -256,6 +277,7 @@ int aml__start_timer(struct aml* self, struct aml_timer* timer)
 	return 0;
 }
 
+EXPORT
 int aml_start(struct aml* self, void* obj)
 {
 	struct aml_obj* head = obj;
@@ -293,6 +315,7 @@ int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 	return 0;
 }
 
+EXPORT
 int aml_stop(struct aml* self, void* obj)
 {
 	struct aml_obj* head = obj;
@@ -384,6 +407,7 @@ void aml__handle_fd_event(struct aml* self, struct aml_fd_event* ev)
 }
 
 /* Might exit earlier than timeout. It's up to the user to check */
+EXPORT
 int aml_run_once(struct aml* self, int timeout)
 {
 	int next_timeout = aml__get_next_timeout(self, timeout);
@@ -420,6 +444,7 @@ int aml_run_once(struct aml* self, int timeout)
 	return nfds;
 }
 
+EXPORT
 int aml_run(struct aml* self)
 {
 	self->do_exit = false;
@@ -430,12 +455,14 @@ int aml_run(struct aml* self)
 	return 0;
 }
 
+EXPORT
 void aml_exit(struct aml* self)
 {
 	self->do_exit = true;
 	aml_interrupt(self);
 }
 
+EXPORT
 void aml_ref(void* obj)
 {
 	struct aml_obj* self = obj;
@@ -463,7 +490,7 @@ void aml__free_handler(struct aml_handler* self)
 	free(self);
 }
 
-void aml__free_timer(struct aml_handler* self)
+void aml__free_timer(struct aml_timer* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
@@ -471,14 +498,7 @@ void aml__free_timer(struct aml_handler* self)
 	free(self);
 }
 
-void aml__free_ticker(struct aml_handler* self)
-{
-	if (self->obj.free_fn)
-		self->obj.free_fn(self->obj.userdata);
-
-	free(self);
-}
-
+EXPORT
 void aml_unref(void* obj)
 {
 	struct aml_obj* self = obj;
@@ -494,13 +514,27 @@ void aml_unref(void* obj)
 		aml__free_handler(obj);
 		break;
 	case AML_OBJ_TIMER:
-		aml__free_timer(obj);
-		break;
+		/* fallthrough */
 	case AML_OBJ_TICKER:
-		aml__free_ticker(obj);
+		aml__free_timer(obj);
 		break;
 	default:
 		abort();
 		break;
 	}
+}
+
+EXPORT
+void* aml_get_userdata(const void* obj)
+{
+	const struct aml_obj* aml_obj = obj;
+	return aml_obj->userdata;
+}
+
+EXPORT
+void aml_set_userdata(void* obj, void* userdata, aml_free_fn free_fn)
+{
+	struct aml_obj* aml_obj = obj;
+	aml_obj->userdata = userdata;
+	aml_obj->free_fn = free_fn;
 }
