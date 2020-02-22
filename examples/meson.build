@@ -3,7 +3,7 @@ executable(
 	[
 		'ticker.c',
 	],
-	dependences: [
+	dependencies: [
 		aml_dep,
 	]
 )
