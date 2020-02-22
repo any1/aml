@@ -120,6 +120,9 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	self->obj.type = AML_OBJ_AML;
 	self->obj.ref = 1;
 
+	LIST_INIT(&self->obj_list);
+	LIST_INIT(&self->timer_list);
+
 	if (backend_size > sizeof(self->backend))
 		return NULL;
 
@@ -197,6 +200,15 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
 	return self;
 }
 
+struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn callback,
+                                  void* userdata, aml_free_fn free_fn)
+{
+	struct aml_timer* timer =
+		aml_timer_new(period, callback, userdata, free_fn);
+	timer->obj.type = AML_OBJ_TICKER;
+	return (struct aml_ticker*)timer;
+}
+
 void aml__obj_ref(struct aml* self, void* obj)
 {
 	aml_ref(obj);
@@ -239,13 +251,9 @@ int aml__start_timer(struct aml* self, struct aml_timer* timer)
 	timer->deadline = gettime_ms() + timer->timeout;
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
 
-	return 0;
-}
+	aml_interrupt(self);
 
-int aml__start_ticker(struct aml* self, struct aml_ticker* ticker)
-{
-	// TODO
-	return -1;
+	return 0;
 }
 
 int aml_start(struct aml* self, void* obj)
@@ -255,8 +263,8 @@ int aml_start(struct aml* self, void* obj)
 	switch (head->type) {
 	case AML_OBJ_AML: return -1;
 	case AML_OBJ_HANDLER: return aml__start_handler(self, obj);
-	case AML_OBJ_TIMER: return aml__start_timer(self, obj);
-	case AML_OBJ_TICKER: return aml__start_ticker(self, obj);
+	case AML_OBJ_TIMER: /* fallthrough */
+	case AML_OBJ_TICKER: return aml__start_timer(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -285,12 +293,6 @@ int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 	return 0;
 }
 
-int aml__stop_ticker(struct aml* self, struct aml_ticker* ticker)
-{
-	// TODO
-	return -1;
-}
-
 int aml_stop(struct aml* self, void* obj)
 {
 	struct aml_obj* head = obj;
@@ -298,8 +300,8 @@ int aml_stop(struct aml* self, void* obj)
 	switch (head->type) {
 	case AML_OBJ_AML: return -1;
 	case AML_OBJ_HANDLER: return aml__stop_handler(self, obj);
-	case AML_OBJ_TIMER: return aml__stop_timer(self, obj);
-	case AML_OBJ_TICKER: return aml__stop_ticker(self, obj);
+	case AML_OBJ_TIMER: /* fallthrough */
+	case AML_OBJ_TICKER: return aml__stop_timer(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -307,46 +309,64 @@ int aml_stop(struct aml* self, void* obj)
 	return -1;
 }
 
-int aml__get_next_timeout(struct aml* self, int timeout)
+struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 {
-	if (LIST_EMPTY(&self->timer_list))
-		return timeout;
-
 	uint64_t deadline = UINT64_MAX;
+	struct aml_timer* result = NULL;
 
 	struct aml_timer* timer;
 	LIST_FOREACH(timer, &self->timer_list, link)
-		if (timer->deadline < deadline)
+		if (timer->deadline < deadline) {
 			deadline = timer->deadline;
+			result = timer;
+		}
 
-	// TODO: Tickers
-
-	uint64_t now = gettime_ms();
-	if (deadline <= now)
-		return 0;
-
-	return deadline - now;
+	return result;
 }
 
-void aml__handle_timer_event(struct aml* self, struct aml_timer* timer)
+int aml__get_next_timeout(struct aml* self, int timeout)
 {
-	if (timer->cb)
-		timer->cb(timer);
+	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
+	if (!timer)
+		return timeout;
 
-	LIST_REMOVE(timer, link);
-	aml__obj_unref(timer);
+	uint64_t now = gettime_ms();
+	if (timer->deadline <= now)
+		return 0;
+
+	return MIN(timeout, (int)(timer->deadline - now));
 }
 
 void aml__handle_timeout(struct aml* self)
 {
+	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
+
 	uint64_t now = gettime_ms();
 
-	struct aml_timer* timer;
-	LIST_FOREACH(timer, &self->timer_list, link)
-		if (timer->deadline <= now)
-			aml__handle_timer_event(self, timer);
+	if (!timer || timer->deadline > now)
+		return;
 
-	// TODO: Tickers
+	/* A reference is kept here in case a ticker is stopped inside the
+	 * callback. We want the object to live until we're done with it.
+	 */
+	aml_ref(timer);
+
+	if (timer->cb)
+		timer->cb(timer->obj.userdata);
+
+	switch (timer->obj.type) {
+	case AML_OBJ_TIMER:
+		aml__stop_timer(self, timer);
+		break;
+	case AML_OBJ_TICKER:
+		timer->deadline += timer->timeout;
+		break;
+	default:
+		abort();
+		break;
+	}
+
+	aml_unref(timer);
 }
 
 void aml__handle_fd_event(struct aml* self, struct aml_fd_event* ev)
