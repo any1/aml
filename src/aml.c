@@ -5,6 +5,7 @@
 #include <poll.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -37,6 +38,26 @@ struct aml_obj {
 
 LIST_HEAD(aml_obj_list, aml_obj);
 
+struct aml_handler {
+	struct aml_obj obj;
+
+	int fd;
+	uint32_t event_mask;
+	aml_callback_fn cb;
+};
+
+struct aml_timer {
+	struct aml_obj obj;
+
+	uint32_t timeout;
+	uint64_t deadline;
+	aml_callback_fn cb;
+
+	LIST_ENTRY(aml_timer) link;
+};
+
+LIST_HEAD(aml_timer_list, aml_timer);
+
 struct aml {
 	struct aml_obj obj;
 
@@ -51,14 +72,7 @@ struct aml {
 	bool do_exit;
 
 	struct aml_obj_list obj_list;
-};
-
-struct aml_handler {
-	struct aml_obj obj;
-
-	int fd;
-	uint32_t event_mask;
-	aml_callback_fn cb;
+	struct aml_timer_list timer_list;
 };
 
 extern struct aml_backend posix_backend;
@@ -88,6 +102,13 @@ static int aml__del_fd(struct aml* self, int fd)
 void aml__dont_block(int fd)
 {
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+}
+
+static uint64_t gettime_ms(void)
+{
+	struct timespec ts = { 0 };
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 }
 
 struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
@@ -158,6 +179,24 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 	return self;
 }
 
+struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
+                                void* userdata, aml_free_fn free_fn)
+{
+	struct aml_timer* self = calloc(1, sizeof(*self));
+	if (!self)
+		return NULL;
+
+	self->obj.type = AML_OBJ_HANDLER;
+	self->obj.ref = 1;
+	self->obj.userdata = userdata;
+	self->obj.free_fn = free_fn;
+
+	self->timeout = timeout;
+	self->cb = callback;
+
+	return self;
+}
+
 void aml__obj_ref(struct aml* self, void* obj)
 {
 	aml_ref(obj);
@@ -172,15 +211,40 @@ void aml__obj_unref(void* obj)
 
 int aml__start_handler(struct aml* self, struct aml_handler* handler)
 {
+	if (aml__add_fd(self, handler->fd, handler->event_mask, handler) < 0)
+		return -1;
+
 	aml__obj_ref(self, handler);
 
-	if (aml__add_fd(self, handler->fd, handler->event_mask, handler) < 0)
-		goto failure;
+	return 0;
+}
+
+static bool aml__is_timer_started(struct aml* self, struct aml_timer* timer)
+{
+	struct aml_timer* node;
+	LIST_FOREACH(node, &self->timer_list, link)
+		if (node == timer)
+			return true;
+
+	return false;
+}
+
+int aml__start_timer(struct aml* self, struct aml_timer* timer)
+{
+	if (aml__is_timer_started(self, timer))
+		return -1;
+
+	aml__obj_ref(self, timer);
+
+	timer->deadline = gettime_ms() + timer->timeout;
+	LIST_INSERT_HEAD(&self->timer_list, timer, link);
 
 	return 0;
+}
 
-failure:
-	aml__obj_unref(handler);
+int aml__start_ticker(struct aml* self, struct aml_ticker* ticker)
+{
+	// TODO
 	return -1;
 }
 
@@ -205,9 +269,26 @@ int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 	if (aml__del_fd(self, handler->fd) < 0)
 		return -1;
 
-	aml__obj_unref(self);
+	aml__obj_unref(handler);
 
 	return 0;
+}
+
+int aml__stop_timer(struct aml* self, struct aml_timer* timer)
+{
+	if (!aml__is_timer_started(self, timer))
+		return -1;
+
+	LIST_REMOVE(timer, link);
+	aml__obj_unref(timer);
+
+	return 0;
+}
+
+int aml__stop_ticker(struct aml* self, struct aml_ticker* ticker)
+{
+	// TODO
+	return -1;
 }
 
 int aml_stop(struct aml* self, void* obj)
@@ -228,12 +309,44 @@ int aml_stop(struct aml* self, void* obj)
 
 int aml__get_next_timeout(struct aml* self, int timeout)
 {
-	// TODO
-	return 0;
+	if (LIST_EMPTY(&self->timer_list))
+		return timeout;
+
+	uint64_t deadline = UINT64_MAX;
+
+	struct aml_timer* timer;
+	LIST_FOREACH(timer, &self->timer_list, link)
+		if (timer->deadline < deadline)
+			deadline = timer->deadline;
+
+	// TODO: Tickers
+
+	uint64_t now = gettime_ms();
+	if (deadline <= now)
+		return 0;
+
+	return deadline - now;
+}
+
+void aml__handle_timer_event(struct aml* self, struct aml_timer* timer)
+{
+	if (timer->cb)
+		timer->cb(timer);
+
+	LIST_REMOVE(timer, link);
+	aml__obj_unref(timer);
 }
 
 void aml__handle_timeout(struct aml* self)
 {
+	uint64_t now = gettime_ms();
+
+	struct aml_timer* timer;
+	LIST_FOREACH(timer, &self->timer_list, link)
+		if (timer->deadline <= now)
+			aml__handle_timer_event(self, timer);
+
+	// TODO: Tickers
 }
 
 void aml__handle_fd_event(struct aml* self, struct aml_fd_event* ev)
@@ -332,11 +445,17 @@ void aml__free_handler(struct aml_handler* self)
 
 void aml__free_timer(struct aml_handler* self)
 {
+	if (self->obj.free_fn)
+		self->obj.free_fn(self->obj.userdata);
+
 	free(self);
 }
 
 void aml__free_ticker(struct aml_handler* self)
 {
+	if (self->obj.free_fn)
+		self->obj.free_fn(self->obj.userdata);
+
 	free(self);
 }
 
