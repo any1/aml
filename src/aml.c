@@ -357,7 +357,9 @@ int aml__get_next_timeout(struct aml* self, int timeout)
 	if (timer->deadline <= now)
 		return 0;
 
-	return MIN(timeout, (int)(timer->deadline - now));
+	int timer_timeout = timer->deadline - now;
+
+	return timeout < 0 ? timer_timeout : MIN(timeout, timer_timeout);
 }
 
 void aml__handle_timeout(struct aml* self)
@@ -375,7 +377,7 @@ void aml__handle_timeout(struct aml* self)
 	aml_ref(timer);
 
 	if (timer->cb)
-		timer->cb(timer->obj.userdata);
+		timer->cb(timer);
 
 	switch (timer->obj.type) {
 	case AML_OBJ_TIMER:
