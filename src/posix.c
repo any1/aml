@@ -6,6 +6,8 @@
 #include "aml.h"
 
 struct posix_state {
+	struct aml* aml;
+
 	struct pollfd* fds;
 	void** userdata;
 
@@ -13,12 +15,13 @@ struct posix_state {
 	uint32_t num_fds;
 };
 
-static void* posix_new_state(void)
+static void* posix_new_state(struct aml* aml)
 {
 	struct posix_state* self = calloc(1, sizeof(*self));
 	if (!self)
 		return NULL;
 
+	self->aml = aml;
 	self->max_fds = 128;
 	self->fds = malloc(sizeof(*self->fds) * self->max_fds);
 	self->userdata = malloc(sizeof(*self->userdata) * self->max_fds);
@@ -53,42 +56,21 @@ void posix_del_state(void* state)
 	free(self);
 }
 
-int posix_poll(void* state, struct aml_fd_event** revents, size_t* revents_len,
-               int timeout)
+int posix_poll(void* state, int timeout)
 {
 	struct posix_state* self = state;
-
-	assert(revents);
-	assert(revents_len);
 
 	int nfds = poll(self->fds, self->num_fds, timeout);
 	if (nfds <= 0)
 		return nfds;
 
-	if ((size_t)nfds > *revents_len) {
-		size_t new_len = nfds * 2;
-
-		struct aml_fd_event* ev;
-		ev = realloc(*revents, new_len * sizeof(**revents));
-		if (!ev)
-			return -1;
-
-		*revents = ev;
-		*revents_len = new_len;
-	}
-
-	uint32_t c = 0;
 	for (uint32_t i = 0; i < self->num_fds; ++i)
 		if (self->fds[i].revents) {
-			struct aml_fd_event* ev = &(*revents)[c++];
 			struct pollfd* pfd = &self->fds[i];
+			void* ud = &self->userdata[i];
 
-			ev->fd = pfd->fd;
-			ev->event_mask = pfd->revents;
-			ev->userdata = self->userdata[i];
+			aml_emit(self->aml, ud, pfd->revents);
 		}
-
-	assert((int)c == nfds);
 
 	return nfds;
 }

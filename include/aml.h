@@ -16,10 +16,9 @@ struct aml_fd_event {
 };
 
 struct aml_backend {
-	void* (*new_state)(void);
+	void* (*new_state)(struct aml*);
 	void (*del_state)(void* state);
-	int (*poll)(void* state, struct aml_fd_event** revents,
-                    size_t* revents_len, int timeout);
+	int (*poll)(void* state, int timeout);
 	int (*add_fd)(void* state, const struct aml_fd_event*);
 	int (*mod_fd)(void* state, const struct aml_fd_event*);
 	int (*del_fd)(void* state, int fd);
@@ -69,3 +68,6 @@ uint32_t aml_get_revents(const void* obj);
 
 int aml_start(struct aml*, void* obj);
 int aml_stop(struct aml*, void* obj);
+
+/* revents is only used for fd events. Zero otherwise */
+void aml_emit(struct aml* self, void* obj, uint32_t revents);

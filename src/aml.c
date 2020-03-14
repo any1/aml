@@ -35,16 +35,21 @@ struct aml_obj {
 	void* userdata;
 	aml_free_fn free_fn;
 
+	int pending;
+
 	LIST_ENTRY(aml_obj) link;
+	TAILQ_ENTRY(aml_obj) event_link;
 };
 
 LIST_HEAD(aml_obj_list, aml_obj);
+TAILQ_HEAD(aml_obj_queue, aml_obj);
 
 struct aml_handler {
 	struct aml_obj obj;
 
 	int fd;
 	uint32_t event_mask;
+	uint32_t revents;
 	aml_callback_fn cb;
 };
 
@@ -66,15 +71,13 @@ struct aml {
 	void* state;
 	struct aml_backend backend;
 
-	struct aml_fd_event* revents;
-	size_t revents_len;
-
 	int self_pipe[2];
 
 	bool do_exit;
 
 	struct aml_obj_list obj_list;
 	struct aml_timer_list timer_list;
+	struct aml_obj_queue event_queue;
 };
 
 static struct aml* aml__default = NULL;
@@ -95,8 +98,7 @@ struct aml* aml_get_default(void)
 
 static int aml__poll(struct aml* self, int timeout)
 {
-	return self->backend.poll(self->state, &self->revents,
-	                          &self->revents_len, timeout);
+	return self->backend.poll(self->state, timeout);
 }
 
 static int aml__add_fd(struct aml* self, int fd, uint32_t event_mask, void* ud)
@@ -148,7 +150,7 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	else
 		memcpy(&self->backend, &posix_backend, sizeof(self->backend));
 
-	self->state = self->backend.new_state();
+	self->state = self->backend.new_state(self);
 	if (!self->state)
 		goto failure;
 
@@ -394,23 +396,33 @@ void aml__handle_timeout(struct aml* self)
 	aml_unref(timer);
 }
 
-bool aml__event_is_self_pipe(struct aml* self, struct aml_fd_event* ev)
-{
-	return ev->fd == self->self_pipe[PIPE_READ_END];
-}
 
-void aml__handle_fd_event(struct aml* self, struct aml_fd_event* ev)
-{
+void aml__handle_self_pipe() {
+	// TODO
+	/*
 	if (aml__event_is_self_pipe(self, ev)) {
 		char dummy[256];
 		read(self->self_pipe[PIPE_READ_END], dummy, sizeof(dummy));
 		return;
 	}
+	*/
+}
 
-	struct aml_handler* handler = ev->userdata;
+void aml__handle_event(struct aml* self, struct aml_obj* obj)
+{
+	switch (obj->type) {
+	case AML_OBJ_HANDLER:;
+		struct aml_handler* handler = (struct aml_handler*)obj;
+		if (handler->cb)
+			handler->cb(obj);
+		handler->revents = 0;
+		break;
+	default:
+		abort();//TODO handle other events here too
+		break;
+	}
 
-	if (handler->cb)
-		handler->cb(handler);
+	obj->pending = 0;
 }
 
 /* Might exit earlier than timeout. It's up to the user to check */
@@ -428,24 +440,14 @@ int aml_run_once(struct aml* self, int timeout)
 		return 0;
 	}
 
-	/* We must hold a reference to all handler objects that are to be
-	 * processed here in case aml_stop() is called on any of them before
-	 * they are processed.
-	 */
-	for (int i = 0; i < nfds; ++i) {
-		struct aml_fd_event* ev = &self->revents[i];
+	while (!TAILQ_EMPTY(&self->event_queue)) {
+		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
 
-		if (!aml__event_is_self_pipe(self, ev) && ev->userdata)
-			aml_ref(ev->userdata);
-	}
+		// TODO: Make a special object for self pipe
+		aml__handle_event(self, obj);
 
-	for (int i = 0; i < nfds; ++i) {
-		struct aml_fd_event* ev = &self->revents[i];
-
-		aml__handle_fd_event(self, ev);
-
-		if (!aml__event_is_self_pipe(self, ev) && ev->userdata)
-			aml_unref(ev->userdata);
+		TAILQ_REMOVE(&self->event_queue, obj, event_link);
+		aml_unref(obj);
 	}
 
 	return nfds;
@@ -485,7 +487,6 @@ void aml__free(struct aml* self)
 	close(self->self_pipe[PIPE_WRITE_END]);
 	close(self->self_pipe[PIPE_READ_END]);
 	self->backend.del_state(self->state);
-	free(self->revents);
 	free(self);
 }
 
@@ -544,4 +545,19 @@ void aml_set_userdata(void* obj, void* userdata, aml_free_fn free_fn)
 	struct aml_obj* aml_obj = obj;
 	aml_obj->userdata = userdata;
 	aml_obj->free_fn = free_fn;
+}
+
+EXPORT
+void aml_emit(struct aml* self, void* ptr, uint32_t revents)
+{
+	struct aml_obj* obj = ptr;
+
+	if (obj->type == AML_OBJ_HANDLER)
+		((struct aml_handler*)ptr)->revents |= revents;
+
+	if (obj->pending++ > 0)
+		return;
+
+	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
+	aml_ref(obj);
 }
