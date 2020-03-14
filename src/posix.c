@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <signal.h>
+#include <pthread.h>
+#include <errno.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -26,7 +28,27 @@ struct signal_handler {
 
 LIST_HEAD(signal_handler_list, signal_handler);
 
+struct posix_work {
+	struct posix_state* state;
+	struct aml_work* work;
+
+	TAILQ_ENTRY(posix_work) link;
+};
+
+TAILQ_HEAD(posix_work_queue, posix_work);
+
+int posix_enqueue_work(void* state, struct aml_work* work);
+
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
+
+static struct posix_work_queue posix_work_queue =
+	TAILQ_HEAD_INITIALIZER(posix_work_queue);
+
+static int n_thread_pool_users = 0;
+static pthread_t* thread_pool;
+static pthread_mutex_t work_queue_mutex;
+static pthread_cond_t work_queue_cond;
+static int n_threads = 0;
 
 struct signal_handler* signal_handler_find_by_signo(int signo)
 {
@@ -221,13 +243,125 @@ int posix_del_signal(void* state, struct aml_signal* sig)
 
 	if (!signal_handler_find_by_signo(aml_get_signo(sig))) {
 		struct sigaction sa = {
-			.sa_handler = SIG_IGN,
+			.sa_handler = SIG_DFL,
 		};
 
 		sigaction(aml_get_signo(sig), &sa, NULL);
 	}
 
 	free(handler);
+	return 0;
+}
+
+void posix__reap_threads(void)
+{
+	struct timespec ts = { 0 };
+
+	/* A thread returns if it's sent a null-job */
+	posix_enqueue_work(NULL, NULL);
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += 1;
+
+	for (int i = 0; i < n_threads; ++i)
+		pthread_timedjoin_np(thread_pool[i], NULL, &ts);
+
+	free(thread_pool);
+	n_thread_pool_users--;
+
+	assert(n_thread_pool_users >= 0);
+}
+
+struct posix_work* posix_work_dequeue(void)
+{
+	struct posix_work* work;
+
+	pthread_mutex_lock(&work_queue_mutex);
+
+	while ((work = TAILQ_FIRST(&posix_work_queue)) == NULL)
+		pthread_cond_wait(&work_queue_cond, &work_queue_mutex);
+
+	TAILQ_REMOVE(&posix_work_queue, work, link);
+
+	pthread_mutex_unlock(&work_queue_mutex);
+
+	return work;
+}
+
+void* posix_worker_fn(void* context)
+{
+	(void)context;
+
+	while (1) {
+		struct posix_work* work = posix_work_dequeue();
+		if (!work->work) {
+			free(work);
+			break;
+		}
+
+		aml_callback_fn cb = aml_get_work_fn(work->work);
+		if (cb)
+			cb(work);
+
+		aml_emit(work->state->aml, work->work, 0);
+		// TODO: Signal the main thread to break out of poll
+
+		free(work);
+	}
+
+	return NULL;
+}
+
+int posix_init_thread_pool(void* state, int n)
+{
+	int rc = 0;
+
+	if (n > n_threads) {
+		pthread_t* new_pool = realloc(thread_pool, n * sizeof(pthread_t));
+		if (!new_pool)
+			return -1;
+
+		thread_pool = new_pool;
+	}
+
+	int i;
+	for (i = n_threads; i < n; ++i) {
+		rc = pthread_create(&thread_pool[i], NULL, posix_worker_fn, NULL);
+		if (rc < 0)
+			break;
+	}
+
+	n_threads = i;
+
+	if (rc < 0) {
+		errno = rc;
+		posix__reap_threads();
+	} else {
+		n_thread_pool_users++;
+	}
+
+	return rc;
+}
+
+void posix_deinit_thread_pool(void* state)
+{
+	if (--n_thread_pool_users == 0)
+		posix__reap_threads();
+}
+
+int posix_enqueue_work(void* state, struct aml_work* work)
+{
+	struct posix_work* posix_work = calloc(1, sizeof(*posix_work));
+	if (!posix_work)
+		return -1;
+
+	posix_work->state = state;
+	posix_work->work = work;
+
+	pthread_mutex_lock(&work_queue_mutex);
+	TAILQ_INSERT_TAIL(&posix_work_queue, posix_work, link);
+	pthread_cond_broadcast(&work_queue_cond);
+	pthread_mutex_unlock(&work_queue_mutex);
 	return 0;
 }
 
@@ -240,4 +374,7 @@ const struct aml_backend posix_backend = {
 	.del_fd = posix_del_fd,
 	.add_signal = posix_add_signal,
 	.del_signal = posix_del_signal,
+	.init_thread_pool = posix_init_thread_pool,
+	.deinit_thread_pool = posix_deinit_thread_pool,
+	.enqueue_work = posix_enqueue_work,
 };

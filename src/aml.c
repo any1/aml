@@ -587,6 +587,7 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 	sigset_t sig_old, sig_new;
 	sigfillset(&sig_new);
 
+	// TODO: mutex lock event queue
 	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
 	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
