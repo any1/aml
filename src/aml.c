@@ -343,13 +343,7 @@ void aml__handle_timeout(struct aml* self)
 	if (!timer || timer->deadline > now)
 		return;
 
-	/* A reference is kept here in case a ticker is stopped inside the
-	 * callback. We want the object to live until we're done with it.
-	 */
-	aml_ref(timer);
-
-	if (timer->obj.cb)
-		timer->obj.cb(timer);
+	aml_emit(self, timer, 0);
 
 	switch (timer->obj.type) {
 	case AML_OBJ_TIMER:
@@ -362,13 +356,16 @@ void aml__handle_timeout(struct aml* self)
 		abort();
 		break;
 	}
-
-	aml_unref(timer);
 }
 
 
 void aml__handle_event(struct aml* self, struct aml_obj* obj)
 {
+	/* A reference is kept here in case an object is stopped inside the
+	 * callback. We want the object to live until we're done with it.
+	 */
+	aml_ref(obj);
+
 	if (obj->cb)
 		obj->cb(obj);
 
@@ -376,6 +373,8 @@ void aml__handle_event(struct aml* self, struct aml_obj* obj)
 		((struct aml_handler*)obj)->revents = 0;
 
 	obj->pending = 0;
+
+	aml_unref(obj);
 }
 
 /* Might exit earlier than timeout. It's up to the user to check */
