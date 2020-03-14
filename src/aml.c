@@ -31,6 +31,7 @@ struct aml_obj {
 	int ref;
 	void* userdata;
 	aml_free_fn free_fn;
+	aml_callback_fn cb;
 
 	int pending;
 
@@ -47,7 +48,6 @@ struct aml_handler {
 	int fd;
 	uint32_t event_mask;
 	uint32_t revents;
-	aml_callback_fn cb;
 };
 
 struct aml_timer {
@@ -55,7 +55,6 @@ struct aml_timer {
 
 	uint32_t timeout;
 	uint64_t deadline;
-	aml_callback_fn cb;
 
 	LIST_ENTRY(aml_timer) link;
 };
@@ -168,10 +167,10 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
+	self->obj.cb = callback;
 
 	self->fd = fd;
 	self->event_mask = EVENT_MASK_DEFAULT;
-	self->cb = callback;
 
 	return self;
 }
@@ -188,9 +187,9 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
+	self->obj.cb = callback;
 
 	self->timeout = timeout;
-	self->cb = callback;
 
 	return self;
 }
@@ -349,8 +348,8 @@ void aml__handle_timeout(struct aml* self)
 	 */
 	aml_ref(timer);
 
-	if (timer->cb)
-		timer->cb(timer);
+	if (timer->obj.cb)
+		timer->obj.cb(timer);
 
 	switch (timer->obj.type) {
 	case AML_OBJ_TIMER:
@@ -370,17 +369,11 @@ void aml__handle_timeout(struct aml* self)
 
 void aml__handle_event(struct aml* self, struct aml_obj* obj)
 {
-	switch (obj->type) {
-	case AML_OBJ_HANDLER:;
-		struct aml_handler* handler = (struct aml_handler*)obj;
-		if (handler->cb)
-			handler->cb(obj);
-		handler->revents = 0;
-		break;
-	default:
-		abort();//TODO handle other events here too
-		break;
-	}
+	if (obj->cb)
+		obj->cb(obj);
+
+	if (obj->type == AML_OBJ_HANDLER)
+		((struct aml_handler*)obj)->revents = 0;
 
 	obj->pending = 0;
 }
