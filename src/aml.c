@@ -417,8 +417,10 @@ int aml_run(struct aml* self)
 {
 	self->do_exit = false;
 
-	do aml_run_once(self, -1);
-	while (!self->do_exit);
+	do {
+		aml_run_once(self, -1);
+		aml_dispatch(self);
+	} while (!self->do_exit);
 
 	return 0;
 }
