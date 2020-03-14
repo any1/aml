@@ -540,3 +540,18 @@ uint32_t aml_get_revents(const struct aml_handler* handler)
 {
 	return handler->revents;
 }
+
+EXPORT
+int aml_get_fd(const void* ptr)
+{
+	const struct aml_obj* obj = ptr;
+
+	switch (obj->type) {
+	case AML_OBJ_HANDLER:
+		return ((struct aml_handler*)ptr)->fd;
+	default:
+		break;
+	}
+
+	return -1;
+}
