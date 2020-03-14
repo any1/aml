@@ -383,7 +383,7 @@ void aml__handle_event(struct aml* self, struct aml_obj* obj)
 
 /* Might exit earlier than timeout. It's up to the user to check */
 EXPORT
-int aml_run_once(struct aml* self, int timeout)
+int aml_poll(struct aml* self, int timeout)
 {
 	int next_timeout = aml__get_next_timeout(self, timeout);
 
@@ -418,7 +418,7 @@ int aml_run(struct aml* self)
 	self->do_exit = false;
 
 	do {
-		aml_run_once(self, -1);
+		aml_poll(self, -1);
 		aml_dispatch(self);
 	} while (!self->do_exit);
 
