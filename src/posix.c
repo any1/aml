@@ -9,6 +9,11 @@
 #include "aml.h"
 #include "sys/queue.h"
 
+enum {
+	PIPE_READ_END = 0,
+	PIPE_WRITE_END = 1,
+};
+
 struct posix_state {
 	struct aml* aml;
 
@@ -17,6 +22,8 @@ struct posix_state {
 
 	uint32_t max_fds;
 	uint32_t num_fds;
+
+	int self_pipe[2];
 };
 
 struct signal_handler {
@@ -97,6 +104,13 @@ static void* posix_new_state(struct aml* aml)
 		goto failure;
 	}
 
+	if (pipe(self->self_pipe) < 0)
+		goto failure;
+
+	struct pollfd* pfd = &self->fds[self->num_fds++];
+	pfd->events = POLLIN;
+	pfd->fd = self->self_pipe[PIPE_READ_END];
+
 	return self;
 
 failure:
@@ -131,7 +145,14 @@ int posix_poll(void* state, int timeout)
 	if (nfds <= 0)
 		return nfds;
 
-	for (uint32_t i = 0; i < self->num_fds; ++i)
+	if (self->fds[0].revents) {
+		assert(self->fds[0].fd == self->self_pipe[PIPE_READ_END]);
+
+		char dummy[256];
+		read(self->self_pipe[PIPE_READ_END], dummy, sizeof(dummy));
+	}
+
+	for (uint32_t i = 1; i < self->num_fds; ++i)
 		if (self->fds[i].revents) {
 			struct pollfd* pfd = &self->fds[i];
 			struct aml_handler* handler = self->handlers[i];
@@ -285,6 +306,12 @@ struct posix_work* posix_work_dequeue(void)
 	return work;
 }
 
+void posix__interrupt(struct posix_state* state)
+{
+	char one = 1;
+	write(state->self_pipe[PIPE_WRITE_END], &one, sizeof(one));
+}
+
 void* posix_worker_fn(void* context)
 {
 	(void)context;
@@ -301,7 +328,7 @@ void* posix_worker_fn(void* context)
 			cb(work);
 
 		aml_emit(work->state->aml, work->work, 0);
-		// TODO: Signal the main thread to break out of poll
+		posix__interrupt(work->state);
 
 		free(work);
 	}
