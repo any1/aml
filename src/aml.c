@@ -137,6 +137,7 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 
 	LIST_INIT(&self->obj_list);
 	LIST_INIT(&self->timer_list);
+	TAILQ_INIT(&self->event_queue);
 
 	if (backend_size > sizeof(self->backend))
 		return NULL;

@@ -68,9 +68,9 @@ int posix_poll(void* state, int timeout)
 	for (uint32_t i = 0; i < self->num_fds; ++i)
 		if (self->fds[i].revents) {
 			struct pollfd* pfd = &self->fds[i];
-			void* ud = &self->handlers[i];
+			struct aml_handler* handler = self->handlers[i];
 
-			aml_emit(self->aml, ud, pfd->revents);
+			aml_emit(self->aml, handler, pfd->revents);
 		}
 
 	return nfds;
