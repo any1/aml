@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <errno.h>
+#include <string.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -276,8 +277,8 @@ int posix_del_signal(void* state, struct aml_signal* sig)
 
 void posix__reap_threads(void)
 {
-	/* A thread returns if it's sent a null-job */
-	posix_enqueue_work(NULL, NULL);
+	for (int i = 0; i < n_threads; ++i)
+		pthread_cancel(thread_pool[i]);
 
 	for (int i = 0; i < n_threads; ++i)
 		pthread_join(thread_pool[i], NULL);
@@ -289,22 +290,27 @@ void posix__reap_threads(void)
 	pthread_cond_destroy(&work_queue_cond);
 }
 
-struct posix_work* posix_work_dequeue(void)
+void posix_work_dequeue(struct posix_work* work)
 {
-	struct posix_work* work;
+	struct posix_work* entry;
 
 	pthread_mutex_lock(&work_queue_mutex);
 
-	while ((work = TAILQ_FIRST(&posix_work_queue)) == NULL)
+	while ((entry = TAILQ_FIRST(&posix_work_queue)) == NULL)
 		pthread_cond_wait(&work_queue_cond, &work_queue_mutex);
 
-	/* null-job shall reach all threads */
-	if (work->work)
-		TAILQ_REMOVE(&posix_work_queue, work, link);
+	int old_state = 0;
+	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
+
+	TAILQ_REMOVE(&posix_work_queue, entry, link);
 
 	pthread_mutex_unlock(&work_queue_mutex);
 
-	return work;
+	memcpy(work, entry, sizeof(*work));
+
+	free(entry);
+
+	pthread_setcancelstate(old_state, NULL);
 }
 
 void posix__interrupt(struct posix_state* state)
@@ -318,20 +324,15 @@ void* posix_worker_fn(void* context)
 	(void)context;
 
 	while (1) {
-		struct posix_work* work = posix_work_dequeue();
-		if (!work->work) {
-			free(work);
-			break;
-		}
+		struct posix_work work;
+		posix_work_dequeue(&work);
 
-		aml_callback_fn cb = aml_get_work_fn(work->work);
+		aml_callback_fn cb = aml_get_work_fn(work.work);
 		if (cb)
-			cb(work);
+			cb(work.work);
 
-		aml_emit(work->state->aml, work->work, 0);
-		posix__interrupt(work->state);
-
-		free(work);
+		aml_emit(work.state->aml, work.work, 0);
+		posix__interrupt(work.state);
 	}
 
 	return NULL;
