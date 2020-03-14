@@ -82,7 +82,9 @@ struct aml {
 
 	struct aml_obj_list obj_list;
 	struct aml_timer_list timer_list;
+
 	struct aml_obj_queue event_queue;
+	pthread_mutex_t event_queue_mutex;
 };
 
 static struct aml* aml__default = NULL;
@@ -146,6 +148,8 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	LIST_INIT(&self->obj_list);
 	LIST_INIT(&self->timer_list);
 	TAILQ_INIT(&self->event_queue);
+
+	pthread_mutex_init(&self->event_queue_mutex, NULL);
 
 	if (backend_size > sizeof(self->backend))
 		return NULL;
@@ -449,6 +453,16 @@ int aml_poll(struct aml* self, int timeout)
 	return nfds;
 }
 
+struct aml_obj* aml__event_dequeue(struct aml* self)
+{
+	pthread_mutex_lock(&self->event_queue_mutex);
+	struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
+	if (obj)
+		TAILQ_REMOVE(&self->event_queue, obj, event_link);
+	pthread_mutex_unlock(&self->event_queue_mutex);
+	return obj;
+}
+
 EXPORT
 void aml_dispatch(struct aml* self)
 {
@@ -457,12 +471,9 @@ void aml_dispatch(struct aml* self)
 
 	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
 
-	while (!TAILQ_EMPTY(&self->event_queue)) {
-		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
-
+	struct aml_obj* obj;
+	while ((obj = aml__event_dequeue(self)) != NULL) {
 		aml__handle_event(self, obj);
-
-		TAILQ_REMOVE(&self->event_queue, obj, event_link);
 		aml_unref(obj);
 	}
 
@@ -502,6 +513,9 @@ void aml__free(struct aml* self)
 		aml_stop(self, LIST_FIRST(&self->obj_list));
 
 	self->backend.del_state(self->state);
+
+	pthread_mutex_destroy(&self->event_queue_mutex);
+
 	free(self);
 }
 
@@ -587,9 +601,10 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 	sigset_t sig_old, sig_new;
 	sigfillset(&sig_new);
 
-	// TODO: mutex lock event queue
 	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
+	pthread_mutex_lock(&self->event_queue_mutex);
 	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
+	pthread_mutex_unlock(&self->event_queue_mutex);
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
 
 	aml_ref(obj);
