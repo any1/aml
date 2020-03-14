@@ -332,7 +332,7 @@ int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 
 int aml__stop_signal(struct aml* self, struct aml_signal* sig)
 {
-	if (self->backend.add_signal(self->state, sig) < 0)
+	if (self->backend.del_signal(self->state, sig) < 0)
 		return -1;
 
 	aml__obj_unref(sig);
@@ -499,7 +499,7 @@ void aml_ref(void* obj)
 void aml__free(struct aml* self)
 {
 	while (!LIST_EMPTY(&self->obj_list))
-		aml__obj_unref(LIST_FIRST(&self->obj_list));
+		aml_stop(self, LIST_FIRST(&self->obj_list));
 
 	self->backend.del_state(self->state);
 	free(self);
