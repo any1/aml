@@ -255,16 +255,11 @@ int posix_del_signal(void* state, struct aml_signal* sig)
 
 void posix__reap_threads(void)
 {
-	struct timespec ts = { 0 };
-
 	/* A thread returns if it's sent a null-job */
 	posix_enqueue_work(NULL, NULL);
 
-	clock_gettime(CLOCK_REALTIME, &ts);
-	ts.tv_sec += 1;
-
 	for (int i = 0; i < n_threads; ++i)
-		pthread_timedjoin_np(thread_pool[i], NULL, &ts);
+		pthread_join(thread_pool[i], NULL);
 
 	free(thread_pool);
 	n_thread_pool_users--;
@@ -281,7 +276,9 @@ struct posix_work* posix_work_dequeue(void)
 	while ((work = TAILQ_FIRST(&posix_work_queue)) == NULL)
 		pthread_cond_wait(&work_queue_cond, &work_queue_mutex);
 
-	TAILQ_REMOVE(&posix_work_queue, work, link);
+	/* null-job shall reach all threads */
+	if (work->work)
+		TAILQ_REMOVE(&posix_work_queue, work, link);
 
 	pthread_mutex_unlock(&work_queue_mutex);
 

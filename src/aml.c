@@ -27,6 +27,7 @@ enum aml_obj_type {
 	AML_OBJ_TIMER,
 	AML_OBJ_TICKER,
 	AML_OBJ_SIGNAL,
+	AML_OBJ_WORK,
 };
 
 struct aml_obj {
@@ -70,6 +71,12 @@ struct aml_signal {
 	struct aml_obj obj;
 
 	int signo;
+};
+
+struct aml_work {
+	struct aml_obj obj;
+
+	aml_callback_fn work_fn;
 };
 
 struct aml {
@@ -238,6 +245,25 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
 	return self;
 }
 
+EXPORT
+struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
+                              void* userdata, aml_free_fn free_fn)
+{
+	struct aml_work* self = calloc(1, sizeof(*self));
+	if (!self)
+		return NULL;
+
+	self->obj.type = AML_OBJ_TIMER;
+	self->obj.ref = 1;
+	self->obj.userdata = userdata;
+	self->obj.free_fn = free_fn;
+	self->obj.cb = callback;
+
+	self->work_fn = work_fn;
+
+	return self;
+}
+
 void aml__obj_ref(struct aml* self, void* obj)
 {
 	aml_ref(obj);
@@ -294,6 +320,16 @@ int aml__start_signal(struct aml* self, struct aml_signal* sig)
 	return 0;
 }
 
+int aml__start_work(struct aml* self, struct aml_work* work)
+{
+	if (self->backend.enqueue_work(self->state, work) < 0)
+		return -1;
+
+	aml__obj_ref(self, work);
+
+	return 0;
+}
+
 EXPORT
 int aml_start(struct aml* self, void* obj)
 {
@@ -305,6 +341,7 @@ int aml_start(struct aml* self, void* obj)
 	case AML_OBJ_TIMER: /* fallthrough */
 	case AML_OBJ_TICKER: return aml__start_timer(self, obj);
 	case AML_OBJ_SIGNAL: return aml__start_signal(self, obj);
+	case AML_OBJ_WORK: return aml__start_work(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -355,6 +392,7 @@ int aml_stop(struct aml* self, void* obj)
 	case AML_OBJ_TIMER: /* fallthrough */
 	case AML_OBJ_TICKER: return aml__stop_timer(self, obj);
 	case AML_OBJ_SIGNAL: return aml__stop_signal(self, obj);
+	case AML_OBJ_WORK: break; /* work can not be stopped */
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -543,6 +581,14 @@ void aml__free_signal(struct aml_timer* self)
 	free(self);
 }
 
+void aml__free_work(struct aml_timer* self)
+{
+	if (self->obj.free_fn)
+		self->obj.free_fn(self->obj.userdata);
+
+	free(self);
+}
+
 EXPORT
 void aml_unref(void* obj)
 {
@@ -565,6 +611,9 @@ void aml_unref(void* obj)
 		break;
 	case AML_OBJ_SIGNAL:
 		aml__free_signal(obj);
+		break;
+	case AML_OBJ_WORK:
+		aml__free_work(obj);
 		break;
 	default:
 		abort();
@@ -650,4 +699,10 @@ EXPORT
 int aml_get_signo(const struct aml_signal* sig)
 {
 	return sig->signo;
+}
+
+EXPORT
+aml_callback_fn aml_get_work_fn(const struct aml_work* work)
+{
+	return work->work_fn;
 }
