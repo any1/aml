@@ -8,6 +8,7 @@
 #include <time.h>
 #include <signal.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -32,7 +33,7 @@ enum aml_obj_type {
 
 struct aml_obj {
 	enum aml_obj_type type;
-	int ref;
+	atomic_int ref;
 	void* userdata;
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
