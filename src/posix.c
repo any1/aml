@@ -292,29 +292,31 @@ void posix__reap_threads(void)
 
 	pthread_mutex_destroy(&work_queue_mutex);
 	pthread_cond_destroy(&work_queue_cond);
+
+	while (!TAILQ_EMPTY(&posix_work_queue)) {
+		struct posix_work* work = TAILQ_FIRST(&posix_work_queue);
+		aml_unref(work);
+		free(work);
+		TAILQ_REMOVE(&posix_work_queue, work, link);
+	}
 }
 
-void posix_work_dequeue(struct posix_work* work)
+struct posix_work* posix_work_dequeue(void)
 {
-	struct posix_work* entry;
+	struct posix_work* work;
 
 	pthread_mutex_lock(&work_queue_mutex);
 
-	while ((entry = TAILQ_FIRST(&posix_work_queue)) == NULL)
+	while ((work = TAILQ_FIRST(&posix_work_queue)) == NULL)
 		pthread_cond_wait(&work_queue_cond, &work_queue_mutex);
 
-	int old_state = 0;
-	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
+	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
-	TAILQ_REMOVE(&posix_work_queue, entry, link);
+	TAILQ_REMOVE(&posix_work_queue, work, link);
 
 	pthread_mutex_unlock(&work_queue_mutex);
 
-	memcpy(work, entry, sizeof(*work));
-
-	free(entry);
-
-	pthread_setcancelstate(old_state, NULL);
+	return work;
 }
 
 void posix__interrupt(struct posix_state* state)
@@ -328,15 +330,20 @@ void* posix_worker_fn(void* context)
 	(void)context;
 
 	while (1) {
-		struct posix_work work;
-		posix_work_dequeue(&work);
+		/* XXX: This call disables pthread_cancel() */
+		struct posix_work* work = posix_work_dequeue();
+		assert(work);
 
-		aml_callback_fn cb = aml_get_work_fn(work.work);
+		aml_callback_fn cb = aml_get_work_fn(work->work);
 		if (cb)
-			cb(work.work);
+			cb(work->work);
 
-		aml_emit(work.state->aml, work.work, 0);
-		posix__interrupt(work.state);
+		aml_emit(work->state->aml, work->work, 0);
+		posix__interrupt(work->state);
+
+		aml_unref(work->work);
+		free(work);
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	}
 
 	return NULL;
@@ -389,6 +396,7 @@ int posix_enqueue_work(void* state, struct aml_work* work)
 
 	pthread_mutex_lock(&work_queue_mutex);
 	TAILQ_INSERT_TAIL(&posix_work_queue, posix_work, link);
+	aml_ref(work);
 	pthread_cond_broadcast(&work_queue_cond);
 	pthread_mutex_unlock(&work_queue_mutex);
 	return 0;

@@ -387,6 +387,13 @@ int aml__stop_signal(struct aml* self, struct aml_signal* sig)
 	return 0;
 }
 
+int aml__stop_work(struct aml* self, struct aml_work* work)
+{
+	/* Note: The cb may be executed anyhow */
+	aml__obj_unref(work);
+	return 0;
+}
+
 EXPORT
 int aml_stop(struct aml* self, void* obj)
 {
@@ -398,7 +405,7 @@ int aml_stop(struct aml* self, void* obj)
 	case AML_OBJ_TIMER: /* fallthrough */
 	case AML_OBJ_TICKER: return aml__stop_timer(self, obj);
 	case AML_OBJ_SIGNAL: return aml__stop_signal(self, obj);
-	case AML_OBJ_WORK: break; /* work can not be stopped */
+	case AML_OBJ_WORK: return aml__stop_work(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
