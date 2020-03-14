@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <aml.h>
+#include <signal.h>
 
 void on_tick(void* ticker)
 {
@@ -13,6 +14,11 @@ void on_tick(void* ticker)
 		aml_exit(aml_get_default());
 }
 
+void on_sigint(void* sig)
+{
+	aml_exit(aml_get_default());
+}
+
 int main()
 {
 	struct aml* aml = aml_new(NULL, 0);
@@ -23,19 +29,28 @@ int main()
 
 	int count = 0;
 
+	struct aml_signal* sig = aml_signal_new(SIGINT, on_sigint, NULL, NULL);
+	if (!sig)
+		goto failure;
+
+	aml_start(aml, sig);
+	aml_unref(sig);
+
 	struct aml_ticker* ticker = aml_ticker_new(1000, on_tick, &count, NULL);
 	if (!ticker)
-		goto ticker_failure;
+		goto failure;
 
 	aml_start(aml, ticker);
 	aml_unref(ticker);
 
 	aml_run(aml);
 
+	printf("Exiting...\n");
+
 	aml_unref(aml);
 	return 0;
 
-ticker_failure:
+failure:
 	aml_unref(aml);
 	return 1;
 }
