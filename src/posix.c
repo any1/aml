@@ -45,8 +45,8 @@ struct posix_work {
 
 TAILQ_HEAD(posix_work_queue, posix_work);
 
-int posix_enqueue_work(void* state, struct aml_work* work);
-void posix__reap_threads(void);
+static int posix_enqueue_work(void* state, struct aml_work* work);
+static void posix__reap_threads(void);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 
@@ -81,7 +81,7 @@ struct signal_handler* signal_handler_find_by_obj(struct aml_signal* obj)
 	return NULL;
 }
 
-void posix__signal_handler(int signo)
+static void posix__signal_handler(int signo)
 {
 	struct signal_handler* handler;
 
@@ -130,7 +130,7 @@ static int posix__find_handler(struct posix_state* self,
 	return -1;
 }
 
-void posix_del_state(void* state)
+static void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
@@ -142,13 +142,14 @@ void posix_del_state(void* state)
 		posix__reap_threads();
 }
 
-int posix_poll(void* state, int timeout)
+static int posix_poll(void* state, int timeout)
 {
 	struct posix_state* self = state;
 
 	int nfds = poll(self->fds, self->num_fds, timeout);
 	if (nfds <= 0)
 		return nfds;
+
 
 	if (self->fds[0].revents) {
 		assert(self->fds[0].fd == self->self_pipe[PIPE_READ_END]);
@@ -168,7 +169,7 @@ int posix_poll(void* state, int timeout)
 	return nfds;
 }
 
-int posix_add_fd(void* state, struct aml_handler* handler)
+static int posix_add_fd(void* state, struct aml_handler* handler)
 {
 	struct posix_state* self = state;
 
@@ -200,7 +201,7 @@ int posix_add_fd(void* state, struct aml_handler* handler)
 	return 0;
 }
 
-int posix_mod_fd(void* state, struct aml_handler* handler)
+static int posix_mod_fd(void* state, struct aml_handler* handler)
 {
 	struct posix_state* self = state;
 
@@ -214,7 +215,7 @@ int posix_mod_fd(void* state, struct aml_handler* handler)
 	return 0;
 }
 
-int posix_del_fd(void* state, struct aml_handler* handler)
+static int posix_del_fd(void* state, struct aml_handler* handler)
 {
 	struct posix_state* self = state;
 
@@ -230,7 +231,7 @@ int posix_del_fd(void* state, struct aml_handler* handler)
 	return 0;
 }
 
-int posix_add_signal(void* state, struct aml_signal* sig)
+static int posix_add_signal(void* state, struct aml_signal* sig)
 {
 	int signo = aml_get_signo(sig);
 
@@ -259,7 +260,7 @@ failure:
 	return -1;
 }
 
-int posix_del_signal(void* state, struct aml_signal* sig)
+static int posix_del_signal(void* state, struct aml_signal* sig)
 {
 	struct signal_handler* handler = signal_handler_find_by_obj(sig);
 	if (!handler)
@@ -279,10 +280,9 @@ int posix_del_signal(void* state, struct aml_signal* sig)
 	return 0;
 }
 
-void posix__reap_threads(void)
+static void posix__reap_threads(void)
 {
-	for (int i = 0; i < n_threads; ++i)
-		pthread_cancel(thread_pool[i]);
+	posix_enqueue_work(NULL, NULL);
 
 	for (int i = 0; i < n_threads; ++i)
 		pthread_join(thread_pool[i], NULL);
@@ -295,9 +295,10 @@ void posix__reap_threads(void)
 
 	while (!TAILQ_EMPTY(&posix_work_queue)) {
 		struct posix_work* work = TAILQ_FIRST(&posix_work_queue);
-		aml_unref(work);
-		free(work);
+		if (work->work)
+			aml_unref(work->work);
 		TAILQ_REMOVE(&posix_work_queue, work, link);
+		free(work);
 	}
 }
 
@@ -310,31 +311,32 @@ struct posix_work* posix_work_dequeue(void)
 	while ((work = TAILQ_FIRST(&posix_work_queue)) == NULL)
 		pthread_cond_wait(&work_queue_cond, &work_queue_mutex);
 
-	TAILQ_REMOVE(&posix_work_queue, work, link);
+	if (work->work)
+		TAILQ_REMOVE(&posix_work_queue, work, link);
 
 	pthread_mutex_unlock(&work_queue_mutex);
 
 	return work;
 }
 
-void posix__interrupt(struct posix_state* state)
+static void posix__interrupt(struct posix_state* state)
 {
 	char one = 1;
 	write(state->self_pipe[PIPE_WRITE_END], &one, sizeof(one));
 }
 
-void* posix_worker_fn(void* context)
+static void* posix_worker_fn(void* context)
 {
 	(void)context;
 
-	/* The thread may be cancelled only on cancellation points */
-	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
 	while (1) {
 		struct posix_work* work = posix_work_dequeue();
 		assert(work);
 
-		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+		if (!work->work)
+			break;
 
 		aml_callback_fn cb = aml_get_work_fn(work->work);
 		if (cb)
@@ -345,14 +347,12 @@ void* posix_worker_fn(void* context)
 
 		aml_unref(work->work);
 		free(work);
-
-		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	}
 
 	return NULL;
 }
 
-int posix_init_thread_pool(void* state, int n)
+static int posix_init_thread_pool(void* state, int n)
 {
 	int rc = 0;
 
@@ -388,7 +388,7 @@ int posix_init_thread_pool(void* state, int n)
 	return rc;
 }
 
-int posix_enqueue_work(void* state, struct aml_work* work)
+static int posix_enqueue_work(void* state, struct aml_work* work)
 {
 	struct posix_work* posix_work = calloc(1, sizeof(*posix_work));
 	if (!posix_work)
@@ -399,7 +399,8 @@ int posix_enqueue_work(void* state, struct aml_work* work)
 
 	pthread_mutex_lock(&work_queue_mutex);
 	TAILQ_INSERT_TAIL(&posix_work_queue, posix_work, link);
-	aml_ref(work);
+	if (posix_work->work)
+		aml_ref(work);
 	pthread_cond_broadcast(&work_queue_cond);
 	pthread_mutex_unlock(&work_queue_mutex);
 	return 0;
