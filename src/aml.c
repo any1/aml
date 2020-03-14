@@ -95,26 +95,14 @@ static int aml__poll(struct aml* self, int timeout)
 	return self->backend.poll(self->state, timeout);
 }
 
-static int aml__add_fd(struct aml* self, int fd, uint32_t event_mask,
-                       struct aml_handler* handler)
+static int aml__add_fd(struct aml* self, struct aml_handler* handler)
 {
-	struct aml_fd_event ev = {
-		.fd = fd,
-		.event_mask = event_mask,
-		.handler = handler,
-	};
-
-	return self->backend.add_fd(self->state, &ev);
+	return self->backend.add_fd(self->state, handler);
 }
 
-static int aml__del_fd(struct aml* self, int fd, struct aml_handler* handler)
+static int aml__del_fd(struct aml* self, struct aml_handler* handler)
 {
-	struct aml_fd_event ev = {
-		.fd = fd,
-		.handler = handler,
-	};
-
-	return self->backend.del_fd(self->state, &ev);
+	return self->backend.del_fd(self->state, handler);
 }
 
 void aml__dont_block(int fd)
@@ -224,7 +212,7 @@ void aml__obj_unref(void* obj)
 
 int aml__start_handler(struct aml* self, struct aml_handler* handler)
 {
-	if (aml__add_fd(self, handler->fd, handler->event_mask, handler) < 0)
+	if (aml__add_fd(self, handler) < 0)
 		return -1;
 
 	aml__obj_ref(self, handler);
@@ -274,7 +262,7 @@ int aml_start(struct aml* self, void* obj)
 
 int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 {
-	if (aml__del_fd(self, handler->fd, handler) < 0)
+	if (aml__del_fd(self, handler) < 0)
 		return -1;
 
 	aml__obj_unref(handler);

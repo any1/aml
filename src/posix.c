@@ -38,10 +38,11 @@ failure:
 	return NULL;
 }
 
-static int posix__find_fd(struct posix_state* self, int fd)
+static int posix__find_handler(struct posix_state* self,
+                               struct aml_handler* handler)
 {
 	for (uint32_t i = 0; i < self->num_fds; ++i)
-		if (self->fds[i].fd == fd)
+		if (self->handlers[i] == handler)
 			return i;
 
 	return -1;
@@ -75,7 +76,7 @@ int posix_poll(void* state, int timeout)
 	return nfds;
 }
 
-int posix_add_fd(void* state, const struct aml_fd_event* fdev)
+int posix_add_fd(void* state, struct aml_handler* handler)
 {
 	struct posix_state* self = state;
 
@@ -96,36 +97,36 @@ int posix_add_fd(void* state, const struct aml_fd_event* fdev)
 	}
 
 	struct pollfd* event = &self->fds[self->num_fds];
-	event->events = fdev->event_mask;
+	event->events = aml_get_event_mask(handler);
 	event->revents = 0;
-	event->fd = fdev->fd;
+	event->fd = aml_get_fd(handler);
 
-	self->handlers[self->num_fds] = fdev->handler;
+	self->handlers[self->num_fds] = handler;
 
 	self->num_fds++;
 
 	return 0;
 }
 
-int posix_mod_fd(void* state, const struct aml_fd_event* fdev)
+int posix_mod_fd(void* state, struct aml_handler* handler)
 {
 	struct posix_state* self = state;
 
-	int index = posix__find_fd(self, fdev->fd);
+	int index = posix__find_handler(self, handler);
 	if (index < 0)
 		return -1;
 
-	self->fds[index].events = fdev->event_mask;
-	self->handlers[index] = fdev->handler;
+	self->fds[index].fd = aml_get_fd(handler);
+	self->fds[index].events = aml_get_event_mask(handler);
 
 	return 0;
 }
 
-int posix_del_fd(void* state, const struct aml_fd_event* fdev)
+int posix_del_fd(void* state, struct aml_handler* handler)
 {
 	struct posix_state* self = state;
 
-	int index = posix__find_fd(self, fdev->fd);
+	int index = posix__find_handler(self, handler);
 	if (index < 0)
 		return -1;
 
