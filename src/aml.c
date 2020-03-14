@@ -194,7 +194,7 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
 	if (!self)
 		return NULL;
 
-	self->obj.type = AML_OBJ_HANDLER;
+	self->obj.type = AML_OBJ_TIMER;
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
@@ -223,7 +223,7 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
 	if (!self)
 		return NULL;
 
-	self->obj.type = AML_OBJ_HANDLER;
+	self->obj.type = AML_OBJ_SIGNAL;
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
