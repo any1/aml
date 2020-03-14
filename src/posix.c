@@ -2,8 +2,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <signal.h>
 
 #include "aml.h"
+#include "sys/queue.h"
 
 struct posix_state {
 	struct aml* aml;
@@ -14,6 +16,48 @@ struct posix_state {
 	uint32_t max_fds;
 	uint32_t num_fds;
 };
+
+struct signal_handler {
+	struct posix_state* state;
+	struct aml_signal* sig;
+
+	LIST_ENTRY(signal_handler) link;
+};
+
+LIST_HEAD(signal_handler_list, signal_handler);
+
+static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
+
+struct signal_handler* signal_handler_find_by_signo(int signo)
+{
+	struct signal_handler* handler;
+
+	LIST_FOREACH(handler, &signal_handlers, link)
+		if (aml_get_signo(handler->sig) == signo)
+			return handler;
+
+	return NULL;
+}
+
+struct signal_handler* signal_handler_find_by_obj(struct aml_signal* obj)
+{
+	struct signal_handler* handler;
+
+	LIST_FOREACH(handler, &signal_handlers, link)
+		if (handler->sig == obj)
+			return handler;
+
+	return NULL;
+}
+
+void posix__signal_handler(int signo)
+{
+	struct signal_handler* handler;
+
+	LIST_FOREACH(handler, &signal_handlers, link)
+		if (aml_get_signo(handler->sig) == signo)
+			aml_emit(handler->state->aml, handler->sig, 0);
+}
 
 static void* posix_new_state(struct aml* aml)
 {
@@ -138,6 +182,55 @@ int posix_del_fd(void* state, struct aml_handler* handler)
 	return 0;
 }
 
+int posix_add_signal(void* state, struct aml_signal* sig)
+{
+	int signo = aml_get_signo(sig);
+
+	struct signal_handler* handler = calloc(1, sizeof(*handler));
+	if (!handler)
+		return -1;
+
+	handler->state = state;
+	handler->sig = sig;
+
+	if (!signal_handler_find_by_signo(signo)) {
+		struct sigaction sa = {
+			.sa_handler = posix__signal_handler,
+		};
+
+		if (sigaction(aml_get_signo(sig), &sa, NULL) < 0)
+			goto failure;
+	}
+
+	LIST_INSERT_HEAD(&signal_handlers, handler, link);
+
+	return 0;
+
+failure:
+	free(handler);
+	return -1;
+}
+
+int posix_del_signal(void* state, struct aml_signal* sig)
+{
+	struct signal_handler* handler = signal_handler_find_by_obj(sig);
+	if (!handler)
+		return -1;
+
+	LIST_REMOVE(handler, link);
+
+	if (!signal_handler_find_by_signo(aml_get_signo(sig))) {
+		struct sigaction sa = {
+			.sa_handler = SIG_IGN,
+		};
+
+		sigaction(aml_get_signo(sig), &sa, NULL);
+	}
+
+	free(handler);
+	return 0;
+}
+
 const struct aml_backend posix_backend = {
 	.new_state = posix_new_state,
 	.del_state = posix_del_state,
@@ -145,4 +238,6 @@ const struct aml_backend posix_backend = {
 	.add_fd = posix_add_fd,
 	.mod_fd = posix_mod_fd,
 	.del_fd = posix_del_fd,
+	.add_signal = posix_add_signal,
+	.del_signal = posix_del_signal,
 };

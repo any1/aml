@@ -6,6 +6,8 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <time.h>
+#include <signal.h>
+#include <pthread.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -24,6 +26,7 @@ enum aml_obj_type {
 	AML_OBJ_HANDLER,
 	AML_OBJ_TIMER,
 	AML_OBJ_TICKER,
+	AML_OBJ_SIGNAL,
 };
 
 struct aml_obj {
@@ -32,7 +35,6 @@ struct aml_obj {
 	void* userdata;
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
-
 
 	int pending;
 
@@ -63,6 +65,12 @@ struct aml_timer {
 };
 
 LIST_HEAD(aml_timer_list, aml_timer);
+
+struct aml_signal {
+	struct aml_obj obj;
+
+	int signo;
+};
 
 struct aml {
 	struct aml_obj obj;
@@ -207,6 +215,25 @@ struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn callback,
 	return (struct aml_ticker*)timer;
 }
 
+EXPORT
+struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
+                                  void* userdata, aml_free_fn free_fn)
+{
+	struct aml_signal* self = calloc(1, sizeof(*self));
+	if (!self)
+		return NULL;
+
+	self->obj.type = AML_OBJ_HANDLER;
+	self->obj.ref = 1;
+	self->obj.userdata = userdata;
+	self->obj.free_fn = free_fn;
+	self->obj.cb = callback;
+
+	self->signo = signo;
+
+	return self;
+}
+
 void aml__obj_ref(struct aml* self, void* obj)
 {
 	aml_ref(obj);
@@ -253,6 +280,16 @@ int aml__start_timer(struct aml* self, struct aml_timer* timer)
 	return 0;
 }
 
+int aml__start_signal(struct aml* self, struct aml_signal* sig)
+{
+	if (self->backend.add_signal(self->state, sig) < 0)
+		return -1;
+
+	aml__obj_ref(self, sig);
+
+	return 0;
+}
+
 EXPORT
 int aml_start(struct aml* self, void* obj)
 {
@@ -263,6 +300,7 @@ int aml_start(struct aml* self, void* obj)
 	case AML_OBJ_HANDLER: return aml__start_handler(self, obj);
 	case AML_OBJ_TIMER: /* fallthrough */
 	case AML_OBJ_TICKER: return aml__start_timer(self, obj);
+	case AML_OBJ_SIGNAL: return aml__start_signal(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -292,6 +330,16 @@ int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 	return 0;
 }
 
+int aml__stop_signal(struct aml* self, struct aml_signal* sig)
+{
+	if (self->backend.add_signal(self->state, sig) < 0)
+		return -1;
+
+	aml__obj_unref(sig);
+
+	return 0;
+}
+
 EXPORT
 int aml_stop(struct aml* self, void* obj)
 {
@@ -302,6 +350,7 @@ int aml_stop(struct aml* self, void* obj)
 	case AML_OBJ_HANDLER: return aml__stop_handler(self, obj);
 	case AML_OBJ_TIMER: /* fallthrough */
 	case AML_OBJ_TICKER: return aml__stop_timer(self, obj);
+	case AML_OBJ_SIGNAL: return aml__stop_signal(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -403,6 +452,11 @@ int aml_poll(struct aml* self, int timeout)
 EXPORT
 void aml_dispatch(struct aml* self)
 {
+	sigset_t sig_old, sig_new;
+	sigfillset(&sig_new);
+
+	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
+
 	while (!TAILQ_EMPTY(&self->event_queue)) {
 		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
 
@@ -411,6 +465,8 @@ void aml_dispatch(struct aml* self)
 		TAILQ_REMOVE(&self->event_queue, obj, event_link);
 		aml_unref(obj);
 	}
+
+	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
 }
 
 EXPORT
@@ -465,6 +521,14 @@ void aml__free_timer(struct aml_timer* self)
 	free(self);
 }
 
+void aml__free_signal(struct aml_timer* self)
+{
+	if (self->obj.free_fn)
+		self->obj.free_fn(self->obj.userdata);
+
+	free(self);
+}
+
 EXPORT
 void aml_unref(void* obj)
 {
@@ -484,6 +548,9 @@ void aml_unref(void* obj)
 		/* fallthrough */
 	case AML_OBJ_TICKER:
 		aml__free_timer(obj);
+		break;
+	case AML_OBJ_SIGNAL:
+		aml__free_signal(obj);
 		break;
 	default:
 		abort();
@@ -517,7 +584,13 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 	if (obj->pending++ > 0)
 		return;
 
+	sigset_t sig_old, sig_new;
+	sigfillset(&sig_new);
+
+	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
 	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
+	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
+
 	aml_ref(obj);
 }
 
@@ -555,4 +628,10 @@ int aml_get_fd(const void* ptr)
 	}
 
 	return -1;
+}
+
+EXPORT
+int aml_get_signo(const struct aml_signal* sig)
+{
+	return sig->signo;
 }

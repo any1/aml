@@ -16,6 +16,8 @@ struct aml_backend {
 	int (*add_fd)(void* state, struct aml_handler*);
 	int (*mod_fd)(void* state, struct aml_handler*);
 	int (*del_fd)(void* state, struct aml_handler*);
+	int (*add_signal)(void* state, struct aml_signal*);
+	int (*del_signal)(void* state, struct aml_signal*);
 };
 
 typedef void (*aml_callback_fn)(void* obj);
@@ -66,5 +68,9 @@ uint32_t aml_get_revents(const struct aml_handler* obj);
 int aml_start(struct aml*, void* obj);
 int aml_stop(struct aml*, void* obj);
 
-/* revents is only used for fd events. Zero otherwise */
+int aml_get_signo(const struct aml_signal* sig);
+
+/* revents is only used for fd events. Zero otherwise.
+ * This function may be called inside a signal handler
+ */
 void aml_emit(struct aml* self, void* obj, uint32_t revents);
