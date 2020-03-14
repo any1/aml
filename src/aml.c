@@ -178,6 +178,12 @@ failure:
 }
 
 EXPORT
+int aml_require_workers(struct aml* self, int n)
+{
+	return self->backend.init_thread_pool(self->state, n);
+}
+
+EXPORT
 struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
                                     void* userdata, aml_free_fn free_fn)
 {

@@ -46,6 +46,7 @@ struct posix_work {
 TAILQ_HEAD(posix_work_queue, posix_work);
 
 int posix_enqueue_work(void* state, struct aml_work* work);
+void posix__reap_threads(void);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 
@@ -136,6 +137,9 @@ void posix_del_state(void* state)
 	free(self->handlers);
 	free(self->fds);
 	free(self);
+
+	if (--n_thread_pool_users == 0)
+		posix__reap_threads();
 }
 
 int posix_poll(void* state, int timeout)
@@ -374,14 +378,6 @@ int posix_init_thread_pool(void* state, int n)
 	return rc;
 }
 
-void posix_deinit_thread_pool(void* state)
-{
-	if (--n_thread_pool_users == 0)
-		posix__reap_threads();
-
-	assert(n_thread_pool_users >= 0);
-}
-
 int posix_enqueue_work(void* state, struct aml_work* work)
 {
 	struct posix_work* posix_work = calloc(1, sizeof(*posix_work));
@@ -408,6 +404,5 @@ const struct aml_backend posix_backend = {
 	.add_signal = posix_add_signal,
 	.del_signal = posix_del_signal,
 	.init_thread_pool = posix_init_thread_pool,
-	.deinit_thread_pool = posix_deinit_thread_pool,
 	.enqueue_work = posix_enqueue_work,
 };

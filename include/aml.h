@@ -20,7 +20,6 @@ struct aml_backend {
 	int (*add_signal)(void* state, struct aml_signal*);
 	int (*del_signal)(void* state, struct aml_signal*);
 	int (*init_thread_pool)(void* state, int n_threads);
-	void (*deinit_thread_pool)(void* state);
 	int (*enqueue_work)(void* state, struct aml_work*);
 };
 
