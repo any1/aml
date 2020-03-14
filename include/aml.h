@@ -12,7 +12,7 @@ struct aml_signal;
 struct aml_fd_event {
 	int fd;
 	uint32_t event_mask;
-	void* userdata;
+	struct aml_handler* handler;
 };
 
 struct aml_backend {
@@ -21,7 +21,7 @@ struct aml_backend {
 	int (*poll)(void* state, int timeout);
 	int (*add_fd)(void* state, const struct aml_fd_event*);
 	int (*mod_fd)(void* state, const struct aml_fd_event*);
-	int (*del_fd)(void* state, int fd);
+	int (*del_fd)(void* state, const struct aml_fd_event*);
 };
 
 typedef void (*aml_callback_fn)(void* obj);

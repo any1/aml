@@ -9,7 +9,7 @@ struct posix_state {
 	struct aml* aml;
 
 	struct pollfd* fds;
-	void** userdata;
+	struct aml_handler** handlers;
 
 	uint32_t max_fds;
 	uint32_t num_fds;
@@ -24,10 +24,10 @@ static void* posix_new_state(struct aml* aml)
 	self->aml = aml;
 	self->max_fds = 128;
 	self->fds = malloc(sizeof(*self->fds) * self->max_fds);
-	self->userdata = malloc(sizeof(*self->userdata) * self->max_fds);
-	if (!self->fds || !self->userdata) {
+	self->handlers = malloc(sizeof(*self->handlers) * self->max_fds);
+	if (!self->fds || !self->handlers) {
 		free(self->fds);
-		free(self->userdata);
+		free(self->handlers);
 		goto failure;
 	}
 
@@ -51,7 +51,7 @@ void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
-	free(self->userdata);
+	free(self->handlers);
 	free(self->fds);
 	free(self);
 }
@@ -67,7 +67,7 @@ int posix_poll(void* state, int timeout)
 	for (uint32_t i = 0; i < self->num_fds; ++i)
 		if (self->fds[i].revents) {
 			struct pollfd* pfd = &self->fds[i];
-			void* ud = &self->userdata[i];
+			void* ud = &self->handlers[i];
 
 			aml_emit(self->aml, ud, pfd->revents);
 		}
@@ -82,15 +82,16 @@ int posix_add_fd(void* state, const struct aml_fd_event* fdev)
 	if (self->num_fds >= self->max_fds) {
 		uint32_t new_max = self->max_fds * 2;
 		struct pollfd* fds = realloc(self->fds, sizeof(*fds) * new_max);
-		void** uds = realloc(self->userdata, sizeof(*uds) * new_max);
-		if (!fds || !uds) {
+		struct aml_handler** hds =
+			realloc(self->handlers, sizeof(*hds) * new_max);
+		if (!fds || !hds) {
 			free(fds);
-			free(uds);
+			free(hds);
 			return -1;
 		}
 
 		self->fds = fds;
-		self->userdata = uds;
+		self->handlers = hds;
 		self->max_fds = new_max;
 	}
 
@@ -99,7 +100,7 @@ int posix_add_fd(void* state, const struct aml_fd_event* fdev)
 	event->revents = 0;
 	event->fd = fdev->fd;
 
-	self->userdata[self->num_fds] = fdev->userdata;
+	self->handlers[self->num_fds] = fdev->handler;
 
 	self->num_fds++;
 
@@ -115,23 +116,23 @@ int posix_mod_fd(void* state, const struct aml_fd_event* fdev)
 		return -1;
 
 	self->fds[index].events = fdev->event_mask;
-	self->userdata[index] = fdev->userdata;
+	self->handlers[index] = fdev->handler;
 
 	return 0;
 }
 
-int posix_del_fd(void* state, int fd)
+int posix_del_fd(void* state, const struct aml_fd_event* fdev)
 {
 	struct posix_state* self = state;
 
-	int index = posix__find_fd(self, fd);
+	int index = posix__find_fd(self, fdev->fd);
 	if (index < 0)
 		return -1;
 
 	self->num_fds--;
 
 	self->fds[index] = self->fds[self->num_fds];
-	self->userdata[index] = self->userdata[self->num_fds];
+	self->handlers[index] = self->handlers[self->num_fds];
 
 	return 0;
 }
