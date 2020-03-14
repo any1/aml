@@ -24,7 +24,7 @@ add_project_arguments(c_args, language: 'c')
 cc = meson.get_compiler('c')
 
 librt = cc.find_library('rt', required: true)
-pthread = cc.find_library('pthread', required: true)
+threads = dependency('threads')
 
 inc = include_directories('include')
 
@@ -35,7 +35,7 @@ sources = [
 
 dependencies = [
 	librt,
-	pthread,
+	threads,
 ]
 
 aml = shared_library(
