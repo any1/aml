@@ -52,7 +52,7 @@ static struct posix_work_queue posix_work_queue =
 	TAILQ_HEAD_INITIALIZER(posix_work_queue);
 
 static int n_thread_pool_users = 0;
-static pthread_t* thread_pool;
+static pthread_t* thread_pool = NULL;
 static pthread_mutex_t work_queue_mutex;
 static pthread_cond_t work_queue_cond;
 static int n_threads = 0;
@@ -283,9 +283,10 @@ void posix__reap_threads(void)
 		pthread_join(thread_pool[i], NULL);
 
 	free(thread_pool);
-	n_thread_pool_users--;
+	thread_pool = NULL;
 
-	assert(n_thread_pool_users >= 0);
+	pthread_mutex_destroy(&work_queue_mutex);
+	pthread_cond_destroy(&work_queue_cond);
 }
 
 struct posix_work* posix_work_dequeue(void)
@@ -340,6 +341,11 @@ int posix_init_thread_pool(void* state, int n)
 {
 	int rc = 0;
 
+	if (n_threads == 0) {
+		pthread_mutex_init(&work_queue_mutex, NULL);
+		pthread_cond_init(&work_queue_cond, NULL);
+	}
+
 	if (n > n_threads) {
 		pthread_t* new_pool = realloc(thread_pool, n * sizeof(pthread_t));
 		if (!new_pool)
@@ -371,6 +377,8 @@ void posix_deinit_thread_pool(void* state)
 {
 	if (--n_thread_pool_users == 0)
 		posix__reap_threads();
+
+	assert(n_thread_pool_users >= 0);
 }
 
 int posix_enqueue_work(void* state, struct aml_work* work)
