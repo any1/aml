@@ -310,8 +310,6 @@ struct posix_work* posix_work_dequeue(void)
 	while ((work = TAILQ_FIRST(&posix_work_queue)) == NULL)
 		pthread_cond_wait(&work_queue_cond, &work_queue_mutex);
 
-	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-
 	TAILQ_REMOVE(&posix_work_queue, work, link);
 
 	pthread_mutex_unlock(&work_queue_mutex);
@@ -329,10 +327,14 @@ void* posix_worker_fn(void* context)
 {
 	(void)context;
 
+	/* The thread may be cancelled only on cancellation points */
+	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+
 	while (1) {
-		/* XXX: This call disables pthread_cancel() */
 		struct posix_work* work = posix_work_dequeue();
 		assert(work);
+
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
 		aml_callback_fn cb = aml_get_work_fn(work->work);
 		if (cb)
@@ -343,6 +345,7 @@ void* posix_worker_fn(void* context)
 
 		aml_unref(work->work);
 		free(work);
+
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	}
 
