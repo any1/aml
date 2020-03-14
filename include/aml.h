@@ -58,10 +58,10 @@ int aml_get_fd(const void* obj);
 void aml_set_userdata(void* obj, void* userdata, aml_free_fn);
 void* aml_get_userdata(const void* obj);
 
-void aml_set_event_mask(void* obj);
-uint32_t aml_get_event_mask(const void* obj);
+void aml_set_event_mask(struct aml_handler* obj, uint32_t event_mask);
+uint32_t aml_get_event_mask(const struct aml_handler* obj);
 
-uint32_t aml_get_revents(const void* obj);
+uint32_t aml_get_revents(const struct aml_handler* obj);
 
 int aml_start(struct aml*, void* obj);
 int aml_stop(struct aml*, void* obj);

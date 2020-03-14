@@ -33,6 +33,7 @@ struct aml_obj {
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
 
+
 	int pending;
 
 	LIST_ENTRY(aml_obj) link;
@@ -48,6 +49,8 @@ struct aml_handler {
 	int fd;
 	uint32_t event_mask;
 	uint32_t revents;
+
+	struct aml* parent;
 };
 
 struct aml_timer {
@@ -103,6 +106,11 @@ static int aml__add_fd(struct aml* self, struct aml_handler* handler)
 static int aml__del_fd(struct aml* self, struct aml_handler* handler)
 {
 	return self->backend.del_fd(self->state, handler);
+}
+
+static int aml__mod_fd(struct aml* self, struct aml_handler* handler)
+{
+	return self->backend.mod_fd(self->state, handler);
 }
 
 void aml__dont_block(int fd)
@@ -215,6 +223,7 @@ int aml__start_handler(struct aml* self, struct aml_handler* handler)
 	if (aml__add_fd(self, handler) < 0)
 		return -1;
 
+	handler->parent = self;
 	aml__obj_ref(self, handler);
 
 	return 0;
@@ -265,6 +274,7 @@ int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 	if (aml__del_fd(self, handler) < 0)
 		return -1;
 
+	handler->parent = NULL;
 	aml__obj_unref(handler);
 
 	return 0;
@@ -506,4 +516,25 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 
 	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
 	aml_ref(obj);
+}
+
+EXPORT
+uint32_t aml_get_event_mask(const struct aml_handler* handler)
+{
+	return handler->event_mask;
+}
+
+EXPORT
+void aml_set_event_mask(struct aml_handler* handler, uint32_t event_mask)
+{
+	handler->event_mask = event_mask;
+
+	if (handler->parent)
+		aml__mod_fd(handler->parent, handler);
+}
+
+EXPORT
+uint32_t aml_get_revents(const struct aml_handler* handler)
+{
+	return handler->revents;
 }
