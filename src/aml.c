@@ -14,9 +14,6 @@
 
 #define EVENT_MASK_DEFAULT (POLLIN | POLLPRI)
 
-#define PIPE_READ_END 0
-#define PIPE_WRITE_END 1
-
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
@@ -70,8 +67,6 @@ struct aml {
 
 	void* state;
 	struct aml_backend backend;
-
-	int self_pipe[2];
 
 	bool do_exit;
 
@@ -154,33 +149,11 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	if (!self->state)
 		goto failure;
 
-	if (pipe(self->self_pipe) < 0)
-		goto self_pipe_failure;
-
-	if (aml__add_fd(self, self->self_pipe[PIPE_READ_END],
-	                EVENT_MASK_DEFAULT, NULL) < 0)
-		goto self_pipe_fd_failure;
-
-	aml__dont_block(self->self_pipe[PIPE_READ_END]);
-	aml__dont_block(self->self_pipe[PIPE_WRITE_END]);
-
 	return self;
 
-self_pipe_fd_failure:
-	close(self->self_pipe[PIPE_WRITE_END]);
-	close(self->self_pipe[PIPE_READ_END]);
-self_pipe_failure:
-	self->backend.del_state(self->state);
 failure:
 	free(self);
 	return NULL;
-}
-
-EXPORT
-void aml_interrupt(struct aml* self)
-{
-	char byte = 0;
-	write(self->self_pipe[PIPE_WRITE_END], &byte, 1);
 }
 
 EXPORT
@@ -273,8 +246,6 @@ int aml__start_timer(struct aml* self, struct aml_timer* timer)
 
 	timer->deadline = gettime_ms() + timer->timeout;
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
-
-	aml_interrupt(self);
 
 	return 0;
 }
@@ -397,17 +368,6 @@ void aml__handle_timeout(struct aml* self)
 }
 
 
-void aml__handle_self_pipe() {
-	// TODO
-	/*
-	if (aml__event_is_self_pipe(self, ev)) {
-		char dummy[256];
-		read(self->self_pipe[PIPE_READ_END], dummy, sizeof(dummy));
-		return;
-	}
-	*/
-}
-
 void aml__handle_event(struct aml* self, struct aml_obj* obj)
 {
 	switch (obj->type) {
@@ -443,7 +403,6 @@ int aml_run_once(struct aml* self, int timeout)
 	while (!TAILQ_EMPTY(&self->event_queue)) {
 		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
 
-		// TODO: Make a special object for self pipe
 		aml__handle_event(self, obj);
 
 		TAILQ_REMOVE(&self->event_queue, obj, event_link);
@@ -468,7 +427,6 @@ EXPORT
 void aml_exit(struct aml* self)
 {
 	self->do_exit = true;
-	aml_interrupt(self);
 }
 
 EXPORT
@@ -484,8 +442,6 @@ void aml__free(struct aml* self)
 	while (!LIST_EMPTY(&self->obj_list))
 		aml__obj_unref(LIST_FIRST(&self->obj_list));
 
-	close(self->self_pipe[PIPE_WRITE_END]);
-	close(self->self_pipe[PIPE_READ_END]);
 	self->backend.del_state(self->state);
 	free(self);
 }
