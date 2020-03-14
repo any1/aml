@@ -393,6 +393,12 @@ int aml_run_once(struct aml* self, int timeout)
 		return 0;
 	}
 
+	return nfds;
+}
+
+EXPORT
+void aml_dispatch(struct aml* self)
+{
 	while (!TAILQ_EMPTY(&self->event_queue)) {
 		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
 
@@ -401,8 +407,6 @@ int aml_run_once(struct aml* self, int timeout)
 		TAILQ_REMOVE(&self->event_queue, obj, event_link);
 		aml_unref(obj);
 	}
-
-	return nfds;
 }
 
 EXPORT

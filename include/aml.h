@@ -39,6 +39,9 @@ int aml_run_once(struct aml*, int timeout);
 int aml_run(struct aml*);
 void aml_exit(struct aml*);
 
+/* Dispatch pending events */
+void aml_dispatch(struct aml* self);
+
 void aml_interrupt(struct aml*);
 
 void aml_ref(void* obj);
