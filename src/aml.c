@@ -336,12 +336,13 @@ int aml__start_signal(struct aml* self, struct aml_signal* sig)
 
 int aml__start_work(struct aml* self, struct aml_work* work)
 {
-	if (self->backend.enqueue_work(self->state, work) < 0)
-		return -1;
-
 	aml__obj_ref(self, work);
 
-	return 0;
+	if (self->backend.enqueue_work(self->state, work) == 0)
+		return 0;
+
+	aml__obj_unref(self, work);
+	return -1;
 }
 
 EXPORT
@@ -573,8 +574,11 @@ void aml__free(struct aml* self)
 	while (!LIST_EMPTY(&self->obj_list))
 		aml_stop(self, LIST_FIRST(&self->obj_list));
 
-	while (!TAILQ_EMPTY(&self->event_queue))
-		aml_unref(TAILQ_FIRST(&self->event_queue));
+	while (!TAILQ_EMPTY(&self->event_queue)) {
+		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
+		TAILQ_REMOVE(&self->event_queue, obj, event_link);
+		aml_unref(obj);
+	}
 
 	pthread_mutex_destroy(&self->obj_list_mutex);
 	pthread_mutex_destroy(&self->event_queue_mutex);
