@@ -85,3 +85,5 @@ aml_callback_fn aml_get_work_fn(const struct aml_work*);
  * This function may be called inside a signal handler
  */
 void aml_emit(struct aml* self, void* obj, uint32_t revents);
+
+int aml_get_next_timeout(struct aml* self, int timeout);

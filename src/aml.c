@@ -437,7 +437,8 @@ struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 	return result;
 }
 
-int aml__get_next_timeout(struct aml* self, int timeout)
+EXPORT
+int aml_get_next_timeout(struct aml* self, int timeout)
 {
 	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
 	if (!timer)
@@ -499,7 +500,7 @@ void aml__handle_event(struct aml* self, struct aml_obj* obj)
 EXPORT
 int aml_poll(struct aml* self, int timeout)
 {
-	int next_timeout = aml__get_next_timeout(self, timeout);
+	int next_timeout = aml_get_next_timeout(self, timeout);
 	return aml__poll(self, next_timeout);
 }
 
