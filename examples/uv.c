@@ -25,6 +25,12 @@ struct uv_backend_poll {
 	struct aml_handler* handler;
 };
 
+struct uv_backend_signal {
+	uv_signal_t uv_signal;
+	struct uv_backend_state* state;
+	struct aml_signal* aml_sig;
+};
+
 static void uv_backend_on_timeout()
 {
 	// Do nothing. This is handled later in prepare
@@ -138,18 +144,47 @@ static int uv_backend_del_fd(void* state, struct aml_handler* handler)
 	return 0;
 }
 
+static void uv_backend_on_signal(uv_signal_t* uv_sig, int signo)
+{
+	struct uv_backend_signal* backend_sig =
+		(struct uv_backend_signal*)uv_sig;
+	aml_emit(backend_sig->state->aml, backend_sig->aml_sig, 0);
+}
+
 static int uv_backend_add_signal(void* state, struct aml_signal* sig)
 {
 	struct uv_backend_state* self = state;
-	// TODO
+
+	struct uv_backend_signal* uv_sig = calloc(1, sizeof(*uv_sig));
+	if (!uv_sig)
+		return -1;
+
+	uv_sig->state = state;
+	uv_sig->aml_sig = sig;
+
+	if (uv_signal_init(self->loop, &uv_sig->uv_signal) < 0)
+		goto failure;
+
+	int signo = aml_get_signo(sig);
+
+	if (uv_signal_start(&uv_sig->uv_signal, uv_backend_on_signal, signo) < 0)
+		goto failure;
+
+	aml_set_backend_data(sig, uv_sig);
+
+	return 0;
+
+failure:
+	free(uv_sig);
 	return -1;
 }
 
 static int uv_backend_del_signal(void* state, struct aml_signal* sig)
 {
-	struct uv_backend_state* self = state;
-	// TODO
-	return -1;
+	uv_signal_t* uv_sig = aml_get_backend_data(sig);
+	uv_signal_stop(uv_sig);
+	free(uv_sig);
+	return 0;
 }
 
 static struct aml_backend uv_backend = {
