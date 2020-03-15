@@ -561,10 +561,13 @@ void aml_ref(void* obj)
 
 void aml__free(struct aml* self)
 {
+	self->backend.del_state(self->state);
+
 	while (!LIST_EMPTY(&self->obj_list))
 		aml_stop(self, LIST_FIRST(&self->obj_list));
 
-	self->backend.del_state(self->state);
+	while (!TAILQ_EMPTY(&self->event_queue))
+		aml_unref(TAILQ_FIRST(&self->event_queue));
 
 	pthread_mutex_destroy(&self->event_queue_mutex);
 
@@ -608,7 +611,9 @@ void aml_unref(void* obj)
 {
 	struct aml_obj* self = obj;
 
-	if (--self->ref > 0)
+	int ref = --self->ref;
+	assert(ref >= 0);
+	if (ref > 0)
 		return;
 
 	switch (self->type) {
@@ -667,10 +672,9 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
 	pthread_mutex_lock(&self->event_queue_mutex);
 	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
+	aml_ref(obj);
 	pthread_mutex_unlock(&self->event_queue_mutex);
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
-
-	aml_ref(obj);
 }
 
 EXPORT
