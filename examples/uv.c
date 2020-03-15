@@ -3,6 +3,7 @@
 #include <aml.h>
 #include <poll.h>
 #include <stddef.h>
+#include <string.h>
 #include <uv.h>
 #include <uv/unix.h>
 
@@ -258,6 +259,17 @@ static void on_tick(void* ticker)
 		aml_exit(aml_get_default());
 }
 
+void on_line(void* handler)
+{
+	char line[256];
+	fscanf(stdin, "%s", line);
+
+	printf("Got line: %s\n", line);
+
+	if (strncmp(line, "exit", sizeof(line)) == 0)
+		aml_exit(aml_get_default());
+}
+
 static void on_sigint(void* sig)
 {
 	aml_exit(aml_get_default());
@@ -286,6 +298,14 @@ int main()
 
 	aml_start(aml, ticker);
 	aml_unref(ticker);
+
+	struct aml_handler* handler =
+		aml_handler_new(fileno(stdin), on_line, NULL, NULL);
+	if (!handler)
+		goto failure;
+
+	aml_start(aml, handler);
+	aml_unref(handler);
 
 	uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 	uv_loop_close(uv_default_loop());
