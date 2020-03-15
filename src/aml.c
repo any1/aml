@@ -130,6 +130,11 @@ static int aml__del_fd(struct aml* self, struct aml_handler* handler)
 
 static int aml__mod_fd(struct aml* self, struct aml_handler* handler)
 {
+	if (!self->backend.mod_fd) {
+		aml__del_fd(self, handler);
+		return aml__add_fd(self, handler);
+	}
+
 	return self->backend.mod_fd(self->state, handler);
 }
 
