@@ -89,6 +89,8 @@ struct aml {
 	bool do_exit;
 
 	struct aml_obj_list obj_list;
+	pthread_mutex_t obj_list_mutex;
+
 	struct aml_timer_list timer_list;
 
 	struct aml_obj_queue event_queue;
@@ -158,6 +160,7 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	TAILQ_INIT(&self->event_queue);
 
 	pthread_mutex_init(&self->event_queue_mutex, NULL);
+	pthread_mutex_init(&self->obj_list_mutex, NULL);
 
 	if (backend_size > sizeof(self->backend))
 		return NULL;
@@ -273,14 +276,18 @@ struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
 
 void aml__obj_ref(struct aml* self, void* obj)
 {
+	pthread_mutex_lock(&self->obj_list_mutex);
 	aml_ref(obj);
 	LIST_INSERT_HEAD(&self->obj_list, (struct aml_obj*)obj, link);
+	pthread_mutex_unlock(&self->obj_list_mutex);
 }
 
-void aml__obj_unref(void* obj)
+void aml__obj_unref(struct aml* self, void* obj)
 {
+	pthread_mutex_lock(&self->obj_list_mutex);
 	LIST_REMOVE((struct aml_obj*)obj, link);
 	aml_unref(obj);
+	pthread_mutex_unlock(&self->obj_list_mutex);
 }
 
 int aml__start_handler(struct aml* self, struct aml_handler* handler)
@@ -362,7 +369,7 @@ int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 		return -1;
 
 	handler->parent = NULL;
-	aml__obj_unref(handler);
+	aml__obj_unref(self, handler);
 
 	return 0;
 }
@@ -373,7 +380,7 @@ int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 		return -1;
 
 	LIST_REMOVE(timer, link);
-	aml__obj_unref(timer);
+	aml__obj_unref(self, timer);
 
 	return 0;
 }
@@ -383,7 +390,7 @@ int aml__stop_signal(struct aml* self, struct aml_signal* sig)
 	if (self->backend.del_signal(self->state, sig) < 0)
 		return -1;
 
-	aml__obj_unref(sig);
+	aml__obj_unref(self, sig);
 
 	return 0;
 }
@@ -391,7 +398,7 @@ int aml__stop_signal(struct aml* self, struct aml_signal* sig)
 int aml__stop_work(struct aml* self, struct aml_work* work)
 {
 	/* Note: The cb may be executed anyhow */
-	aml__obj_unref(work);
+	aml__obj_unref(self, work);
 	return 0;
 }
 
@@ -569,6 +576,7 @@ void aml__free(struct aml* self)
 	while (!TAILQ_EMPTY(&self->event_queue))
 		aml_unref(TAILQ_FIRST(&self->event_queue));
 
+	pthread_mutex_destroy(&self->obj_list_mutex);
 	pthread_mutex_destroy(&self->event_queue_mutex);
 
 	free(self);
