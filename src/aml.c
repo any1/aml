@@ -500,17 +500,7 @@ EXPORT
 int aml_poll(struct aml* self, int timeout)
 {
 	int next_timeout = aml__get_next_timeout(self, timeout);
-
-	int nfds = aml__poll(self, next_timeout);
-	if (nfds < 0)
-		return nfds;
-
-	if (nfds == 0) {
-		aml__handle_timeout(self);
-		return 0;
-	}
-
-	return nfds;
+	return aml__poll(self, next_timeout);
 }
 
 struct aml_obj* aml__event_dequeue(struct aml* self)
@@ -526,6 +516,8 @@ struct aml_obj* aml__event_dequeue(struct aml* self)
 EXPORT
 void aml_dispatch(struct aml* self)
 {
+	aml__handle_timeout(self);
+
 	sigset_t sig_old, sig_new;
 	sigfillset(&sig_new);
 
