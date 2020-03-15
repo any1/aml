@@ -260,7 +260,7 @@ struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
 	if (!self)
 		return NULL;
 
-	self->obj.type = AML_OBJ_TIMER;
+	self->obj.type = AML_OBJ_WORK;
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
