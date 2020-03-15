@@ -38,6 +38,8 @@ struct aml_obj {
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
 
+	void* backend_data;
+
 	int pending;
 
 	LIST_ENTRY(aml_obj) link;
@@ -733,4 +735,18 @@ EXPORT
 aml_callback_fn aml_get_work_fn(const struct aml_work* work)
 {
 	return work->work_fn;
+}
+
+EXPORT
+void* aml_get_backend_data(const void* ptr)
+{
+	const struct aml_obj* obj = ptr;
+	return obj->backend_data;
+}
+
+EXPORT
+void aml_set_backend_data(void* ptr, void* data)
+{
+	struct aml_obj* obj = ptr;
+	obj->backend_data = data;
 }
