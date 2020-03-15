@@ -134,12 +134,12 @@ static void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
+	if (--n_thread_pool_users == 0)
+		posix__reap_threads();
+
 	free(self->handlers);
 	free(self->fds);
 	free(self);
-
-	if (--n_thread_pool_users == 0)
-		posix__reap_threads();
 }
 
 static int posix_poll(void* state, int timeout)
@@ -295,8 +295,6 @@ static void posix__reap_threads(void)
 
 	while (!TAILQ_EMPTY(&posix_work_queue)) {
 		struct posix_work* work = TAILQ_FIRST(&posix_work_queue);
-		if (work->work)
-			aml_unref(work->work);
 		TAILQ_REMOVE(&posix_work_queue, work, link);
 		free(work);
 	}
@@ -343,9 +341,10 @@ static void* posix_worker_fn(void* context)
 			cb(work->work);
 
 		aml_emit(work->state->aml, work->work, 0);
+		aml_stop(work->state->aml, work->work);
+
 		posix__interrupt(work->state);
 
-		aml_unref(work->work);
 		free(work);
 	}
 
@@ -399,8 +398,6 @@ static int posix_enqueue_work(void* state, struct aml_work* work)
 
 	pthread_mutex_lock(&work_queue_mutex);
 	TAILQ_INSERT_TAIL(&posix_work_queue, posix_work, link);
-	if (posix_work->work)
-		aml_ref(work);
 	pthread_cond_broadcast(&work_queue_cond);
 	pthread_mutex_unlock(&work_queue_mutex);
 	return 0;
