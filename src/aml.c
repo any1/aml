@@ -191,6 +191,9 @@ failure:
 EXPORT
 int aml_require_workers(struct aml* self, int n)
 {
+	if (!self->backend.init_thread_pool)
+		return -1;
+
 	return self->backend.init_thread_pool(self->state, n);
 }
 
