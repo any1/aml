@@ -14,6 +14,7 @@ struct aml_backend {
 	void* (*new_state)(struct aml*);
 	void (*del_state)(void* state);
 	int (*poll)(void* state, int timeout);
+	void (*exit)(void* state);
 	int (*add_fd)(void* state, struct aml_handler*);
 	int (*mod_fd)(void* state, struct aml_handler*);
 	int (*del_fd)(void* state, struct aml_handler*);

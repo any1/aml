@@ -557,6 +557,9 @@ EXPORT
 void aml_exit(struct aml* self)
 {
 	self->do_exit = true;
+
+	if (self->backend.exit)
+		self->backend.exit(self->state);
 }
 
 EXPORT
