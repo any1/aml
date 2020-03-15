@@ -6,9 +6,11 @@
 #include <pthread.h>
 #include <errno.h>
 #include <string.h>
+#include <stdatomic.h>
 
 #include "aml.h"
 #include "sys/queue.h"
+#include "intset.h"
 
 enum {
 	PIPE_READ_END = 0,
@@ -17,6 +19,8 @@ enum {
 
 struct posix_state {
 	struct aml* aml;
+
+	int32_t id;
 
 	struct pollfd* fds;
 	struct aml_handler** handlers;
@@ -39,6 +43,7 @@ LIST_HEAD(signal_handler_list, signal_handler);
 struct posix_work {
 	struct posix_state* state;
 	struct aml_work* work;
+	int32_t state_id;
 
 	TAILQ_ENTRY(posix_work) link;
 };
@@ -54,11 +59,17 @@ static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 static struct posix_work_queue posix_work_queue =
 	TAILQ_HEAD_INITIALIZER(posix_work_queue);
 
-static int n_thread_pool_users = 0;
+static atomic_int n_thread_pool_users = 0;
+static struct intset thread_pool_users;
+static pthread_mutex_t thread_pool_users_mutex;
+
 static pthread_t* thread_pool = NULL;
 static pthread_mutex_t work_queue_mutex;
 static pthread_cond_t work_queue_cond;
+
 static int n_threads = 0;
+
+static int32_t state_id = 0;
 
 struct signal_handler* signal_handler_find_by_signo(int signo)
 {
@@ -91,6 +102,18 @@ static void posix__signal_handler(int signo)
 			aml_emit(handler->state->aml, handler->sig, 0);
 }
 
+static bool posix_state_id_is_alive(int32_t id)
+{
+	if (n_thread_pool_users == 0)
+		return false;
+
+	pthread_mutex_lock(&thread_pool_users_mutex);
+	bool r = intset_is_set(&thread_pool_users, id);
+	pthread_mutex_unlock(&thread_pool_users_mutex);
+
+	return r;
+}
+
 static void* posix_new_state(struct aml* aml)
 {
 	struct posix_state* self = calloc(1, sizeof(*self));
@@ -114,6 +137,12 @@ static void* posix_new_state(struct aml* aml)
 	pfd->events = POLLIN;
 	pfd->fd = self->self_pipe[PIPE_READ_END];
 
+	int32_t id;
+	do id = state_id++;
+	while (posix_state_id_is_alive(id));
+
+	self->id = id;
+
 	return self;
 
 failure:
@@ -135,8 +164,15 @@ static void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
-	if (--n_thread_pool_users == 0)
+	pthread_mutex_lock(&thread_pool_users_mutex);
+	intset_clear(&thread_pool_users, self->id);
+	pthread_mutex_unlock(&thread_pool_users_mutex);
+
+	if (--n_thread_pool_users == 0) {
 		posix__reap_threads();
+		intset_destroy(&thread_pool_users);
+		pthread_mutex_destroy(&thread_pool_users_mutex);
+	}
 
 	free(self->handlers);
 	free(self->fds);
@@ -337,6 +373,9 @@ static void* posix_worker_fn(void* context)
 		if (!work->work)
 			break;
 
+		if (!posix_state_id_is_alive(work->state_id))
+			goto done;
+
 		aml_callback_fn cb = aml_get_work_fn(work->work);
 		if (cb)
 			cb(work->work);
@@ -346,6 +385,7 @@ static void* posix_worker_fn(void* context)
 
 		posix__interrupt(work->state);
 
+done:
 		free(work);
 	}
 
@@ -354,6 +394,7 @@ static void* posix_worker_fn(void* context)
 
 static int posix_init_thread_pool(void* state, int n)
 {
+	struct posix_state* self = state;
 	int rc = 0;
 
 	if (n_threads == 0) {
@@ -378,25 +419,46 @@ static int posix_init_thread_pool(void* state, int n)
 
 	n_threads = i;
 
-	if (rc < 0) {
-		errno = rc;
-		posix__reap_threads();
-	} else {
-		n_thread_pool_users++;
+	if (rc < 0)
+		goto failure;
+
+	if (n_thread_pool_users++ == 0) {
+		if (intset_init(&thread_pool_users, 0) < 0)
+			goto user_failure;
+
+		pthread_mutex_init(&thread_pool_users_mutex, NULL);
 	}
 
+	pthread_mutex_lock(&thread_pool_users_mutex);
+	rc = intset_set(&thread_pool_users, self->id);
+	pthread_mutex_unlock(&thread_pool_users_mutex);
+	if (rc < 0)
+		goto user_failure;
+
 	return rc;
+
+user_failure:
+	--n_thread_pool_users;
+failure:
+	errno = rc;
+	posix__reap_threads();
+	return -1;
 }
 
 static int posix__enqueue_work(void* state, struct aml_work* work,
                                int broadcast)
 {
+	struct posix_state* self = state;
+
 	struct posix_work* posix_work = calloc(1, sizeof(*posix_work));
 	if (!posix_work)
 		return -1;
 
 	posix_work->state = state;
 	posix_work->work = work;
+
+	if (self)
+		posix_work->state_id = self->id;
 
 	pthread_mutex_lock(&work_queue_mutex);
 	TAILQ_INSERT_TAIL(&posix_work_queue, posix_work, link);
