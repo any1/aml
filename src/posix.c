@@ -45,7 +45,8 @@ struct posix_work {
 
 TAILQ_HEAD(posix_work_queue, posix_work);
 
-static int posix_enqueue_work(void* state, struct aml_work* work);
+static int posix__enqueue_work(void* state, struct aml_work* work,
+                               int broadcast);
 static void posix__reap_threads(void);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
@@ -282,7 +283,7 @@ static int posix_del_signal(void* state, struct aml_signal* sig)
 
 static void posix__reap_threads(void)
 {
-	posix_enqueue_work(NULL, NULL);
+	posix__enqueue_work(NULL, NULL, 1);
 
 	for (int i = 0; i < n_threads; ++i)
 		pthread_join(thread_pool[i], NULL);
@@ -387,7 +388,8 @@ static int posix_init_thread_pool(void* state, int n)
 	return rc;
 }
 
-static int posix_enqueue_work(void* state, struct aml_work* work)
+static int posix__enqueue_work(void* state, struct aml_work* work,
+                               int broadcast)
 {
 	struct posix_work* posix_work = calloc(1, sizeof(*posix_work));
 	if (!posix_work)
@@ -398,9 +400,19 @@ static int posix_enqueue_work(void* state, struct aml_work* work)
 
 	pthread_mutex_lock(&work_queue_mutex);
 	TAILQ_INSERT_TAIL(&posix_work_queue, posix_work, link);
-	pthread_cond_broadcast(&work_queue_cond);
+
+	if (broadcast)
+		pthread_cond_broadcast(&work_queue_cond);
+	else
+		pthread_cond_signal(&work_queue_cond);
+
 	pthread_mutex_unlock(&work_queue_mutex);
 	return 0;
+}
+
+static int posix_enqueue_work(void* state, struct aml_work* work)
+{
+	return posix__enqueue_work(state, work, 0);
 }
 
 const struct aml_backend posix_backend = {
