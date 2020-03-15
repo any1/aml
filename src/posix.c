@@ -481,6 +481,7 @@ const struct aml_backend posix_backend = {
 	.new_state = posix_new_state,
 	.del_state = posix_del_state,
 	.poll = posix_poll,
+	.exit = NULL,
 	.add_fd = posix_add_fd,
 	.mod_fd = posix_mod_fd,
 	.del_fd = posix_del_fd,
