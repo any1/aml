@@ -5,6 +5,7 @@ executable(
 	],
 	dependencies: [
 		aml_dep,
+		threads,
 	]
 )
 
@@ -15,5 +16,22 @@ executable(
 	],
 	dependencies: [
 		aml_dep,
+		threads,
 	]
 )
+
+libuv = dependency('libuv', required: false)
+
+if libuv.found()
+	executable(
+		'uv',
+		[
+			'uv.c',
+		],
+		dependencies: [
+			aml_dep,
+			threads,
+			libuv,
+		]
+	)
+endif
