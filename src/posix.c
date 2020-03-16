@@ -153,7 +153,7 @@ failure:
 static int posix__find_handler(struct posix_state* self,
                                struct aml_handler* handler)
 {
-	for (uint32_t i = 0; i < self->num_fds; ++i)
+	for (uint32_t i = 1; i < self->num_fds; ++i)
 		if (self->handlers[i] == handler)
 			return i;
 
