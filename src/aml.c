@@ -591,10 +591,10 @@ void aml_ref(void* obj)
 
 void aml__free(struct aml* self)
 {
-	self->backend.del_state(self->state);
-
 	while (!LIST_EMPTY(&self->obj_list))
 		aml_stop(self, LIST_FIRST(&self->obj_list));
+
+	self->backend.del_state(self->state);
 
 	while (!TAILQ_EMPTY(&self->event_queue)) {
 		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
