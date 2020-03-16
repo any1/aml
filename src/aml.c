@@ -772,3 +772,20 @@ void aml_set_backend_data(void* ptr, void* data)
 	struct aml_obj* obj = ptr;
 	obj->backend_data = data;
 }
+
+EXPORT
+void aml_set_duration(void* ptr, uint32_t duration)
+{
+	struct aml_obj* obj = ptr;
+
+	switch (obj->type) {
+	case AML_OBJ_TIMER: /* fallthrough */
+	case AML_OBJ_TICKER:
+		((struct aml_timer*)ptr)->timeout = duration;
+		return;
+	default:
+		break;
+	}
+
+	abort();
+}

@@ -94,6 +94,12 @@ uint32_t aml_get_event_mask(const struct aml_handler* obj);
 
 uint32_t aml_get_revents(const struct aml_handler* obj);
 
+/* Set timeout/period of a timer/ticker
+ *
+ * Calling this on a started timer/ticker yields undefined behaviour
+ */
+void aml_set_duration(void* obj, uint32_t value);
+
 int aml_start(struct aml*, void* obj);
 int aml_stop(struct aml*, void* obj);
 
