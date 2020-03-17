@@ -200,6 +200,7 @@ static int posix_poll(void* state, int timeout)
 			struct pollfd* pfd = &self->fds[i];
 			struct aml_handler* handler = self->handlers[i];
 
+			assert(pfd->fd == aml_get_fd(handler));
 			aml_emit(self->aml, handler, pfd->revents);
 		}
 
