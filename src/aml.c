@@ -53,12 +53,14 @@ struct aml_obj {
 	void* userdata;
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
+	unsigned long long id;
 
 	void* backend_data;
 
 	int pending;
 
 	LIST_ENTRY(aml_obj) link;
+	LIST_ENTRY(aml_obj) global_link;
 	TAILQ_ENTRY(aml_obj) event_link;
 };
 
@@ -117,6 +119,9 @@ struct aml {
 
 static struct aml* aml__default = NULL;
 
+static unsigned long long aml__obj_id = 0;
+static struct aml_obj_list aml__obj_list = LIST_HEAD_INITIALIZER(aml__obj_list);
+
 extern struct aml_backend posix_backend;
 
 EXPORT
@@ -168,6 +173,17 @@ static uint64_t gettime_ms(void)
 	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 }
 
+void aml__obj_global_ref(struct aml_obj* obj)
+{
+	obj->id = aml__obj_id++;
+	LIST_INSERT_HEAD(&aml__obj_list, obj, global_link);
+}
+
+void aml__obj_global_unref(struct aml_obj* obj)
+{
+	LIST_REMOVE(obj, global_link);
+}
+
 EXPORT
 struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 {
@@ -196,6 +212,8 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	self->state = self->backend.new_state(self);
 	if (!self->state)
 		goto failure;
+
+	aml__obj_global_ref(&self->obj);
 
 	return self;
 
@@ -230,6 +248,8 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 	self->fd = fd;
 	self->event_mask = EVENT_MASK_DEFAULT;
 
+	aml__obj_global_ref(&self->obj);
+
 	return self;
 }
 
@@ -248,6 +268,8 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
 	self->obj.cb = callback;
 
 	self->timeout = timeout;
+
+	aml__obj_global_ref(&self->obj);
 
 	return self;
 }
@@ -278,6 +300,8 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
 
 	self->signo = signo;
 
+	aml__obj_global_ref(&self->obj);
+
 	return self;
 }
 
@@ -296,6 +320,8 @@ struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
 	self->obj.cb = callback;
 
 	self->work_fn = work_fn;
+
+	aml__obj_global_ref(&self->obj);
 
 	return self;
 }
@@ -605,6 +631,7 @@ void aml__free(struct aml* self)
 	pthread_mutex_destroy(&self->obj_list_mutex);
 	pthread_mutex_destroy(&self->event_queue_mutex);
 
+	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -613,6 +640,7 @@ void aml__free_handler(struct aml_handler* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
+	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -621,6 +649,7 @@ void aml__free_timer(struct aml_timer* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
+	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -629,6 +658,7 @@ void aml__free_signal(struct aml_timer* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
+	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -637,6 +667,7 @@ void aml__free_work(struct aml_timer* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
+	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -672,6 +703,25 @@ void aml_unref(void* obj)
 		abort();
 		break;
 	}
+}
+
+EXPORT
+unsigned long long aml_get_id(const void* obj)
+{
+	const struct aml_obj* aml_obj = obj;
+	return aml_obj->id;
+}
+
+EXPORT
+void* aml_obj_find(unsigned long long id)
+{
+	struct aml_obj* obj;
+
+	LIST_FOREACH(obj, &aml__obj_list, global_link)
+		if (obj->id == id)
+			return obj;
+
+	return NULL;
 }
 
 EXPORT
