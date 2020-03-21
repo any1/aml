@@ -24,7 +24,6 @@
 #include <time.h>
 #include <signal.h>
 #include <pthread.h>
-#include <stdatomic.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -50,7 +49,7 @@ enum aml_obj_type {
 
 struct aml_obj {
 	enum aml_obj_type type;
-	atomic_int ref;
+	int ref;
 	void* userdata;
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
@@ -127,6 +126,9 @@ static struct aml* aml__default = NULL;
 static unsigned long long aml__obj_id = 0;
 static struct aml_obj_list aml__obj_list = LIST_HEAD_INITIALIZER(aml__obj_list);
 
+// TODO: Properly initialise this?
+static pthread_mutex_t aml__ref_mutex;
+
 extern struct aml_backend posix_backend;
 
 EXPORT
@@ -178,15 +180,22 @@ static uint64_t gettime_ms(void)
 	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 }
 
-void aml__obj_global_ref(struct aml_obj* obj)
+void aml__ref_lock(void)
 {
-	obj->id = aml__obj_id++;
-	LIST_INSERT_HEAD(&aml__obj_list, obj, global_link);
+	pthread_mutex_lock(&aml__ref_mutex);
 }
 
-void aml__obj_global_unref(struct aml_obj* obj)
+void aml__ref_unlock(void)
 {
-	LIST_REMOVE(obj, global_link);
+	pthread_mutex_unlock(&aml__ref_mutex);
+}
+
+void aml__obj_global_ref(struct aml_obj* obj)
+{
+	aml__ref_lock();
+	obj->id = aml__obj_id++;
+	LIST_INSERT_HEAD(&aml__obj_list, obj, global_link);
+	aml__ref_unlock();
 }
 
 static void on_self_pipe_read(void* obj) {
@@ -680,7 +689,9 @@ void aml_ref(void* obj)
 {
 	struct aml_obj* self = obj;
 
+	aml__ref_lock();
 	self->ref++;
+	aml__ref_unlock();
 }
 
 void aml__free(struct aml* self)
@@ -702,7 +713,6 @@ void aml__free(struct aml* self)
 	pthread_mutex_destroy(&self->obj_list_mutex);
 	pthread_mutex_destroy(&self->event_queue_mutex);
 
-	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -711,7 +721,6 @@ void aml__free_handler(struct aml_handler* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
-	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -720,7 +729,6 @@ void aml__free_timer(struct aml_timer* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
-	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -729,7 +737,6 @@ void aml__free_signal(struct aml_timer* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
-	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -738,7 +745,6 @@ void aml__free_work(struct aml_timer* self)
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
 
-	aml__obj_global_unref(&self->obj);
 	free(self);
 }
 
@@ -747,7 +753,11 @@ void aml_unref(void* obj)
 {
 	struct aml_obj* self = obj;
 
+	aml__ref_lock();
 	int ref = --self->ref;
+	if (ref == 0)
+		LIST_REMOVE(self, global_link);
+	aml__ref_unlock();
 	assert(ref >= 0);
 	if (ref > 0)
 		return;
@@ -784,15 +794,22 @@ unsigned long long aml_get_id(const void* obj)
 }
 
 EXPORT
-void* aml_obj_find(unsigned long long id)
+void* aml_try_ref(unsigned long long id)
 {
-	struct aml_obj* obj;
+	struct aml_obj* obj = NULL;
 
+	aml__ref_lock();
 	LIST_FOREACH(obj, &aml__obj_list, global_link)
 		if (obj->id == id)
-			return obj;
+			break;
 
-	return NULL;
+	if (obj && obj->id == id)
+		obj->ref++;
+	else
+		obj = NULL;
+
+	aml__ref_unlock();
+	return obj;
 }
 
 EXPORT

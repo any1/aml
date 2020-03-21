@@ -68,7 +68,7 @@ void aml_ref(void* obj);
 void aml_unref(void* obj);
 
 unsigned long long aml_get_id(const void* obj);
-void* aml_obj_find(unsigned long long id);
+void* aml_try_ref(unsigned long long id);
 
 struct aml_handler* aml_handler_new(int fd, aml_callback_fn, void* userdata,
                                     aml_free_fn);
