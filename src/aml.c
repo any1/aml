@@ -895,6 +895,12 @@ void aml_set_backend_data(void* ptr, void* data)
 }
 
 EXPORT
+void* aml_get_backend_state(const struct aml* self)
+{
+	return self->state;
+}
+
+EXPORT
 void aml_set_duration(void* ptr, uint32_t duration)
 {
 	struct aml_obj* obj = ptr;

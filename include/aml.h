@@ -93,6 +93,8 @@ void* aml_get_userdata(const void* obj);
 void aml_set_backend_data(void* ptr, void* data);
 void* aml_get_backend_data(const void* ptr);
 
+void* aml_get_backend_state(const struct aml*);
+
 void aml_set_event_mask(struct aml_handler* obj, uint32_t event_mask);
 uint32_t aml_get_event_mask(const struct aml_handler* obj);
 
