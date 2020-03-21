@@ -17,8 +17,6 @@ struct posix_state {
 
 	uint32_t max_fds;
 	uint32_t num_fds;
-
-	int self_pipe[2];
 };
 
 struct signal_handler {
