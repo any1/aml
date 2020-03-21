@@ -24,6 +24,7 @@
 #include <time.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sys/sysinfo.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -301,9 +302,21 @@ failure:
 	return NULL;
 }
 
+static int get_n_processors(void)
+{
+#ifdef _SC_NPROCESSORS_ONLN
+	return sysconf(_SC_NPROCESSORS_ONLN);
+#else
+	return 4; /* Guess */
+#endif
+}
+
 EXPORT
 int aml_require_workers(struct aml* self, int n)
 {
+	if (n < 0)
+		n = get_n_processors();
+
 	if (self->backend.thread_pool_acquire(self, n) < 0)
 		return -1;
 
