@@ -16,20 +16,9 @@
 
 #pragma once
 
-#include <unistd.h>
-#include <stdint.h>
-#include <stdbool.h>
+struct aml;
+struct aml_work;
 
-struct intset {
-	size_t cap;
-	size_t len;
-	int32_t* storage;
-};
-
-int intset_init(struct intset* self, size_t cap);
-void intset_destroy(struct intset* self);
-
-int intset_set(struct intset* self, int32_t value);
-void intset_clear(struct intset* self, int32_t value);
-
-bool intset_is_set(const struct intset* self, int32_t value);
+int thread_pool_acquire_default(struct aml*, int n_threads);
+void thread_pool_release_default(struct aml*);
+int thread_pool_enqueue_default(struct aml*, struct aml_work*);

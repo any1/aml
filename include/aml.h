@@ -36,8 +36,9 @@ struct aml_backend {
 	int (*del_fd)(void* state, struct aml_handler*);
 	int (*add_signal)(void* state, struct aml_signal*);
 	int (*del_signal)(void* state, struct aml_signal*);
-	int (*init_thread_pool)(void* state, int n_threads);
-	int (*enqueue_work)(void* state, struct aml_work*);
+	int (*thread_pool_acquire)(struct aml*, int n_threads);
+	void (*thread_pool_release)(struct aml*);
+	int (*thread_pool_enqueue)(struct aml*, struct aml_work*);
 };
 
 typedef void (*aml_callback_fn)(void* obj);

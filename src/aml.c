@@ -28,6 +28,7 @@
 
 #include "aml.h"
 #include "sys/queue.h"
+#include "thread-pool.h"
 
 #define EXPORT __attribute__((visibility("default")))
 
@@ -115,6 +116,8 @@ struct aml {
 
 	struct aml_obj_queue event_queue;
 	pthread_mutex_t event_queue_mutex;
+
+	bool have_thread_pool;
 };
 
 static struct aml* aml__default = NULL;
@@ -209,6 +212,13 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	else
 		memcpy(&self->backend, &posix_backend, sizeof(self->backend));
 
+	if (!self->backend.thread_pool_acquire)
+		self->backend.thread_pool_acquire = thread_pool_acquire_default;
+	if (!self->backend.thread_pool_release)
+		self->backend.thread_pool_release = thread_pool_release_default;
+	if (!self->backend.thread_pool_enqueue)
+		self->backend.thread_pool_enqueue = thread_pool_enqueue_default;
+
 	self->state = self->backend.new_state(self);
 	if (!self->state)
 		goto failure;
@@ -225,10 +235,11 @@ failure:
 EXPORT
 int aml_require_workers(struct aml* self, int n)
 {
-	if (!self->backend.init_thread_pool)
+	if (self->backend.thread_pool_acquire(self, n) < 0)
 		return -1;
 
-	return self->backend.init_thread_pool(self->state, n);
+	self->have_thread_pool = true;
+	return 0;
 }
 
 EXPORT
@@ -390,7 +401,7 @@ int aml__start_work(struct aml* self, struct aml_work* work)
 {
 	aml__obj_ref(self, work);
 
-	if (self->backend.enqueue_work(self->state, work) == 0)
+	if (self->backend.thread_pool_enqueue(self->state, work) == 0)
 		return 0;
 
 	aml__obj_unref(self, work);
@@ -619,6 +630,9 @@ void aml__free(struct aml* self)
 {
 	while (!LIST_EMPTY(&self->obj_list))
 		aml_stop(self, LIST_FIRST(&self->obj_list));
+
+	if (self->have_thread_pool)
+		self->backend.thread_pool_release(self);
 
 	self->backend.del_state(self->state);
 
