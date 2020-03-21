@@ -688,13 +688,15 @@ void aml_exit(struct aml* self)
 }
 
 EXPORT
-void aml_ref(void* obj)
+int aml_ref(void* obj)
 {
 	struct aml_obj* self = obj;
 
 	aml__ref_lock();
-	self->ref++;
+	int ref = self->ref++;
 	aml__ref_unlock();
+
+	return ref;
 }
 
 void aml__free(struct aml* self)
@@ -752,7 +754,7 @@ void aml__free_work(struct aml_timer* self)
 }
 
 EXPORT
-void aml_unref(void* obj)
+int aml_unref(void* obj)
 {
 	struct aml_obj* self = obj;
 
@@ -763,7 +765,7 @@ void aml_unref(void* obj)
 	aml__ref_unlock();
 	assert(ref >= 0);
 	if (ref > 0)
-		return;
+		goto done;
 
 	switch (self->type) {
 	case AML_OBJ_AML:
@@ -787,6 +789,9 @@ void aml_unref(void* obj)
 		abort();
 		break;
 	}
+
+done:
+	return ref;
 }
 
 EXPORT

@@ -64,10 +64,32 @@ void aml_dispatch(struct aml* self);
 
 void aml_interrupt(struct aml*);
 
-void aml_ref(void* obj);
-void aml_unref(void* obj);
+/* Increment the reference count by one.
+ *
+ * Returns how many references there were BEFORE the call.
+ */
+int aml_ref(void* obj);
 
+/* Decrement the reference count by one.
+ *
+ * Returns how many references there are AFTER the call.
+ */
+int aml_unref(void* obj);
+
+/* Get global object id.
+ *
+ * This can be used to break reference loops.
+ *
+ * Returns an id that can be used to access the object using aml_try_ref().
+ */
 unsigned long long aml_get_id(const void* obj);
+
+/* Try to reference and object with an id returned by aml_get_id().
+ *
+ * This increments the reference count by one.
+ *
+ * Returns the aml object if found. Otherwise NULL.
+ */
 void* aml_try_ref(unsigned long long id);
 
 struct aml_handler* aml_handler_new(int fd, aml_callback_fn, void* userdata,
