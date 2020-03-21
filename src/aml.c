@@ -204,7 +204,7 @@ static void on_self_pipe_read(void* obj) {
 	assert(self->self_pipe_rfd == aml_get_fd(obj));
 
 	char dummy[256];
-	while (read(self->self_pipe_rfd, dummy, sizeof(dummy) > 0));
+	while (read(self->self_pipe_rfd, dummy, sizeof(dummy)) > 0);
 }
 
 static void aml__destroy_self_pipe(void* userdata)
@@ -220,6 +220,9 @@ static int aml__init_self_pipe(struct aml* self)
 	int fds[2];
 	if (pipe(fds) < 0)
 		return -1;
+
+	aml__dont_block(fds[0]);
+	aml__dont_block(fds[1]);
 
 	self->self_pipe_rfd = fds[0];
 	self->self_pipe_wfd = fds[1];
@@ -467,7 +470,7 @@ int aml__start_work(struct aml* self, struct aml_work* work)
 {
 	aml__obj_ref(self, work);
 
-	if (self->backend.thread_pool_enqueue(self->state, work) == 0)
+	if (self->backend.thread_pool_enqueue(self, work) == 0)
 		return 0;
 
 	aml__obj_unref(self, work);

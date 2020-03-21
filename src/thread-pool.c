@@ -168,6 +168,8 @@ static int enqueue_work(struct aml* aml, struct aml_work* work, int broadcast)
 	default_work->work = work;
 
 	if (aml)
+		default_work->aml_id = aml_get_id(aml);
+	else
 		default_work->aml_id = ULLONG_MAX;
 
 	pthread_mutex_lock(&work_queue_mutex);
