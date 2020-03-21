@@ -59,6 +59,15 @@ static void uv_backend_on_timeout()
 	// Do nothing. This is handled later in prepare
 }
 
+static int uv_backend_thread_pool_acquire()
+{
+	return 0;
+}
+
+static void uv_backend_thread_pool_release()
+{
+}
+
 static void uv_backend_on_prepare(uv_prepare_t* prepare)
 {
 	struct uv_backend_state* state =
@@ -226,15 +235,15 @@ static void uv_backend_after_work(uv_work_t* req, int status)
 	aml_stop(w->state->aml, w->aml_work);
 }
 
-static int uv_backend_enqueue_work(void* state, struct aml_work* work)
+static int uv_backend_thread_pool_enqueue(struct aml* aml, struct aml_work* work)
 {
-	struct uv_backend_state* self = state;
+	struct uv_backend_state* self = aml_get_backend_state(aml);
 
 	struct uv_backend_work* w = calloc(1, sizeof(*w));
 	if (!w)
 		return -1;
 
-	w->state = state;
+	w->state = self;
 	w->aml_work = work;
 
 	int rc = uv_queue_work(self->loop, &w->uv_work, uv_backend_do_work,
@@ -259,8 +268,9 @@ static struct aml_backend uv_backend = {
 	.del_fd = uv_backend_del_fd,
 	.add_signal = uv_backend_add_signal,
 	.del_signal = uv_backend_del_signal,
-	.init_thread_pool = NULL,
-	.enqueue_work = uv_backend_enqueue_work,
+	.thread_pool_acquire = uv_backend_thread_pool_acquire,
+	.thread_pool_release = uv_backend_thread_pool_release,
+	.thread_pool_enqueue = uv_backend_thread_pool_enqueue,
 };
 
 static void on_tick(void* ticker)

@@ -180,8 +180,6 @@ static struct aml_backend wl_backend = {
 	.del_fd = wl_backend_del_fd,
 	.add_signal = wl_backend_add_signal,
 	.del_signal = wl_backend_del_signal,
-	.init_thread_pool = NULL,
-	.enqueue_work = NULL,
 };
 
 static void on_tick(void* ticker)
