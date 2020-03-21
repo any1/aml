@@ -107,6 +107,8 @@ struct aml {
 	void* state;
 	struct aml_backend backend;
 
+	int self_pipe_rfd, self_pipe_wfd;
+
 	bool do_exit;
 
 	struct aml_obj_list obj_list;
@@ -187,6 +189,56 @@ void aml__obj_global_unref(struct aml_obj* obj)
 	LIST_REMOVE(obj, global_link);
 }
 
+static void on_self_pipe_read(void* obj) {
+	struct aml* self = aml_get_userdata(obj);
+	assert(self);
+	assert(self->self_pipe_rfd == aml_get_fd(obj));
+
+	char dummy[256];
+	while (read(self->self_pipe_rfd, dummy, sizeof(dummy) > 0));
+}
+
+static void aml__destroy_self_pipe(void* userdata)
+{
+	struct aml* self = userdata;
+
+	close(self->self_pipe_rfd);
+	close(self->self_pipe_wfd);
+}
+
+static int aml__init_self_pipe(struct aml* self)
+{
+	int fds[2];
+	if (pipe(fds) < 0)
+		return -1;
+
+	self->self_pipe_rfd = fds[0];
+	self->self_pipe_wfd = fds[1];
+
+	struct aml_handler* handler =
+		aml_handler_new(self->self_pipe_rfd, on_self_pipe_read, self,
+		                aml__destroy_self_pipe);
+	if (!handler)
+		goto failure;
+
+	aml_start(self, handler);
+	aml_unref(handler);
+
+	return 0;
+
+failure:
+	close(fds[1]);
+	close(fds[0]);
+	return -1;
+}
+
+EXPORT
+void aml_interrupt(struct aml* self)
+{
+	char one = 1;
+	write(self->self_pipe_wfd, &one, sizeof(one));
+}
+
 EXPORT
 struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 {
@@ -223,10 +275,15 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	if (!self->state)
 		goto failure;
 
+	if (aml__init_self_pipe(self) < 0)
+		goto pipe_failure;
+
 	aml__obj_global_ref(&self->obj);
 
 	return self;
 
+pipe_failure:
+	self->backend.del_state(self->state);
 failure:
 	free(self);
 	return NULL;
