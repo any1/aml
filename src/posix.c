@@ -9,6 +9,18 @@
 #include "aml.h"
 #include "sys/queue.h"
 
+struct posix_state;
+
+typedef void (*fd_op_fn)(struct posix_state*, struct aml_handler*);
+
+struct posix_fd_op {
+	struct aml_handler* handler;
+	fd_op_fn call;
+	TAILQ_ENTRY(posix_fd_op) link;
+};
+
+TAILQ_HEAD(posix_fd_op_queue, posix_fd_op);
+
 struct posix_state {
 	struct aml* aml;
 
@@ -17,6 +29,9 @@ struct posix_state {
 
 	uint32_t max_fds;
 	uint32_t num_fds;
+
+	struct posix_fd_op_queue fd_ops;
+	pthread_mutex_t fd_ops_mutex;
 };
 
 struct signal_handler {
@@ -39,6 +54,37 @@ struct posix_work {
 TAILQ_HEAD(posix_work_queue, posix_work);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
+
+static int posix__enqueue_fd_op(struct posix_state* self, fd_op_fn call,
+                                struct aml_handler* handler)
+{
+	struct posix_fd_op* op = calloc(1, sizeof(*op));
+	if (!op)
+		return -1;
+
+	aml_ref(handler);
+
+	op->call = call;
+	op->handler = handler;
+
+	pthread_mutex_lock(&self->fd_ops_mutex);
+	TAILQ_INSERT_TAIL(&self->fd_ops, op, link);
+	pthread_mutex_unlock(&self->fd_ops_mutex);
+
+	aml_interrupt(self->aml);
+
+	return 0;
+}
+
+static struct posix_fd_op* posix__dequeue_fd_op(struct posix_state* self)
+{
+	pthread_mutex_lock(&self->fd_ops_mutex);
+	struct posix_fd_op* op = TAILQ_FIRST(&self->fd_ops);
+	if (op)
+		TAILQ_REMOVE(&self->fd_ops, op, link);
+	pthread_mutex_unlock(&self->fd_ops_mutex);
+	return op;
+}
 
 struct signal_handler* signal_handler_find_by_signo(int signo)
 {
@@ -87,6 +133,9 @@ static void* posix_new_state(struct aml* aml)
 		goto failure;
 	}
 
+	TAILQ_INIT(&self->fd_ops);
+	pthread_mutex_init(&self->fd_ops_mutex, NULL);
+
 	return self;
 
 failure:
@@ -108,14 +157,37 @@ static void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
+	while (!TAILQ_EMPTY(&self->fd_ops)) {
+		struct posix_fd_op* op = TAILQ_FIRST(&self->fd_ops);
+		TAILQ_REMOVE(&self->fd_ops, op, link);
+		aml_unref(op->handler);
+		free(op);
+	}
+
+	pthread_mutex_destroy(&self->fd_ops_mutex);
 	free(self->handlers);
 	free(self->fds);
 	free(self);
 }
 
+static void posix__apply_fd_ops(struct posix_state* self)
+{
+	while (1) {
+		struct posix_fd_op* op = posix__dequeue_fd_op(self);
+		if (!op)
+			break;
+
+		op->call(self, op->handler);
+		aml_unref(op->handler);
+		free(op);
+	}
+}
+
 static int posix_poll(void* state, int timeout)
 {
 	struct posix_state* self = state;
+
+	posix__apply_fd_ops(self);
 
 	int nfds = poll(self->fds, self->num_fds, timeout);
 	if (nfds <= 0)
@@ -133,20 +205,14 @@ static int posix_poll(void* state, int timeout)
 	return nfds;
 }
 
-static int posix_add_fd(void* state, struct aml_handler* handler)
+static void posix_add_fd_op(struct posix_state* self, struct aml_handler* handler)
 {
-	struct posix_state* self = state;
-
 	if (self->num_fds >= self->max_fds) {
 		uint32_t new_max = self->max_fds * 2;
 		struct pollfd* fds = realloc(self->fds, sizeof(*fds) * new_max);
 		struct aml_handler** hds =
 			realloc(self->handlers, sizeof(*hds) * new_max);
-		if (!fds || !hds) {
-			free(fds);
-			free(hds);
-			return -1;
-		}
+		assert(fds && hds);
 
 		self->fds = fds;
 		self->handlers = hds;
@@ -161,38 +227,41 @@ static int posix_add_fd(void* state, struct aml_handler* handler)
 	self->handlers[self->num_fds] = handler;
 
 	self->num_fds++;
-
-	return 0;
 }
 
-static int posix_mod_fd(void* state, struct aml_handler* handler)
+static void posix_mod_fd_op(struct posix_state* self, struct aml_handler* handler)
 {
-	struct posix_state* self = state;
-
 	int index = posix__find_handler(self, handler);
-	if (index < 0)
-		return -1;
+	assert(index >= 0);
 
 	self->fds[index].fd = aml_get_fd(handler);
 	self->fds[index].events = aml_get_event_mask(handler);
-
-	return 0;
 }
 
-static int posix_del_fd(void* state, struct aml_handler* handler)
+static void posix_del_fd_op(struct posix_state* self, struct aml_handler* handler)
 {
-	struct posix_state* self = state;
-
 	int index = posix__find_handler(self, handler);
-	if (index < 0)
-		return -1;
+	assert(index >= 0);
 
 	self->num_fds--;
 
 	self->fds[index] = self->fds[self->num_fds];
 	self->handlers[index] = self->handlers[self->num_fds];
+}
 
-	return 0;
+static int posix_add_fd(void* state, struct aml_handler* handler)
+{
+	return posix__enqueue_fd_op(state, posix_add_fd_op, handler);
+}
+
+static int posix_mod_fd(void* state, struct aml_handler* handler)
+{
+	return posix__enqueue_fd_op(state, posix_mod_fd_op, handler);
+}
+
+static int posix_del_fd(void* state, struct aml_handler* handler)
+{
+	return posix__enqueue_fd_op(state, posix_del_fd_op, handler);
 }
 
 static int posix_add_signal(void* state, struct aml_signal* sig)
