@@ -405,6 +405,11 @@ static int posix_add_signal(void* state, struct aml_signal* sig)
 	handler->sig = sig;
 
 	if (!signal_handler_find_by_signo(signo)) {
+		sigset_t set;
+		sigemptyset(&set);
+		sigaddset(&set, signo);
+		pthread_sigmask(SIG_BLOCK, &set, NULL);
+
 		struct sigaction sa = {
 			.sa_handler = posix__signal_handler,
 		};
@@ -435,7 +440,14 @@ static int posix_del_signal(void* state, struct aml_signal* sig)
 			.sa_handler = SIG_DFL,
 		};
 
-		sigaction(aml_get_signo(sig), &sa, NULL);
+		int signo = aml_get_signo(sig);
+
+		sigaction(signo, &sa, NULL);
+
+		sigset_t set;
+		sigemptyset(&set);
+		sigaddset(&set, signo);
+		pthread_sigmask(SIG_UNBLOCK, &set, NULL);
 	}
 
 	free(handler);
