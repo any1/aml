@@ -5,6 +5,9 @@
 #include <signal.h>
 #include <pthread.h>
 #include <string.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <errno.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -30,8 +33,16 @@ struct posix_state {
 	uint32_t max_fds;
 	uint32_t num_fds;
 
+	pthread_t poller_thread;
+
+	int event_pipe_rfd, event_pipe_wfd;
+
 	struct posix_fd_op_queue fd_ops;
 	pthread_mutex_t fd_ops_mutex;
+
+	int nfds;
+	pthread_mutex_t wait_mutex;
+	pthread_cond_t wait_cond;
 };
 
 struct signal_handler {
@@ -42,6 +53,8 @@ struct signal_handler {
 };
 
 LIST_HEAD(signal_handler_list, signal_handler);
+
+static int posix_spawn_poller(struct posix_state* self);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 
@@ -107,6 +120,26 @@ static void posix__signal_handler(int signo)
 			aml_emit(handler->state->aml, handler->sig, 0);
 }
 
+static void dont_block(int fd)
+{
+	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+}
+
+static int posix_init_event_pipe(struct posix_state* self)
+{
+	int fds[2];
+	if (pipe(fds) < 0)
+		return -1;
+
+	dont_block(fds[0]);
+	dont_block(fds[1]);
+
+	self->event_pipe_rfd = fds[0];
+	self->event_pipe_wfd = fds[1];
+
+	return 0;
+}
+
 static void* posix_new_state(struct aml* aml)
 {
 	struct posix_state* self = calloc(1, sizeof(*self));
@@ -126,8 +159,22 @@ static void* posix_new_state(struct aml* aml)
 	TAILQ_INIT(&self->fd_ops);
 	pthread_mutex_init(&self->fd_ops_mutex, NULL);
 
+	pthread_mutex_init(&self->wait_mutex, NULL);
+	pthread_cond_init(&self->wait_cond, NULL);
+
+	if (posix_init_event_pipe(self) < 0)
+		goto pipe_failure;
+
+	if (posix_spawn_poller(self) < 0)
+		goto thread_failure;
+
 	return self;
 
+thread_failure:
+	close(self->event_pipe_rfd);
+	close(self->event_pipe_wfd);
+pipe_failure:
+	pthread_mutex_destroy(&self->fd_ops_mutex);
 failure:
 	free(self);
 	return NULL;
@@ -147,13 +194,14 @@ static void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
-	while (!TAILQ_EMPTY(&self->fd_ops)) {
-		struct posix_fd_op* op = TAILQ_FIRST(&self->fd_ops);
-		TAILQ_REMOVE(&self->fd_ops, op, link);
-		aml_unref(op->handler);
-		free(op);
-	}
+	pthread_cancel(self->poller_thread);
+	pthread_join(self->poller_thread, NULL);
 
+	close(self->event_pipe_rfd);
+	close(self->event_pipe_wfd);
+
+	pthread_cond_destroy(&self->wait_cond);
+	pthread_mutex_destroy(&self->wait_mutex);
 	pthread_mutex_destroy(&self->fd_ops_mutex);
 	free(self->handlers);
 	free(self->fds);
@@ -173,12 +221,8 @@ static void posix__apply_fd_ops(struct posix_state* self)
 	}
 }
 
-static int posix_poll(void* state, int timeout)
+static int posix_do_poll(struct posix_state* self, int timeout)
 {
-	struct posix_state* self = state;
-
-	posix__apply_fd_ops(self);
-
 	int nfds = poll(self->fds, self->num_fds, timeout);
 	if (nfds <= 0)
 		return nfds;
@@ -190,7 +234,85 @@ static int posix_poll(void* state, int timeout)
 
 			assert(pfd->fd == aml_get_fd(handler));
 			aml_emit(self->aml, handler, pfd->revents);
+
+			// TODO: Clear event mask until after dispatch
 		}
+
+	return nfds;
+}
+
+static void posix_wake_up_main(struct posix_state* self, int nfds)
+{
+	pthread_mutex_lock(&self->wait_mutex);
+	self->nfds = nfds;
+	pthread_cond_signal(&self->wait_cond);
+	pthread_mutex_unlock(&self->wait_mutex);
+}
+
+static void* posix_poll_thread(void* state)
+{
+	struct posix_state* self = state;
+
+	while (1) {
+		posix__apply_fd_ops(self);
+
+		int nfds = posix_do_poll(self, -1);
+		if (nfds > 0) {
+			char one = 1;
+			write(self->event_pipe_wfd, &one, sizeof(one));
+			posix_wake_up_main(self, nfds);
+		}
+	}
+
+	return NULL;
+}
+
+static int posix_spawn_poller(struct posix_state* self)
+{
+	return pthread_create(&self->poller_thread, NULL, posix_poll_thread,
+	                      self);
+}
+
+static int posix_poll(void* state, int timeout)
+{
+	struct posix_state* self = state;
+	int nfds;
+
+	if (timeout == 0) {
+		pthread_mutex_lock(&self->wait_mutex);
+		nfds = self->nfds;
+		self->nfds = 0;
+		pthread_mutex_unlock(&self->wait_mutex);
+	} else if (timeout < 0) {
+		pthread_mutex_lock(&self->wait_mutex);
+		while (self->nfds == 0)
+			pthread_cond_wait(&self->wait_cond, &self->wait_mutex);
+		nfds = self->nfds;
+		self->nfds = 0;
+		pthread_mutex_unlock(&self->wait_mutex);
+	} else {
+		struct timespec ts = { 0 };
+		clock_gettime(CLOCK_REALTIME, &ts);
+		uint32_t ms = timeout + ts.tv_nsec / 1000000UL;
+		ts.tv_sec += ms / 1000UL;
+		ts.tv_nsec = (ms % 1000UL) * 1000000UL;
+
+		pthread_mutex_lock(&self->wait_mutex);
+		while (self->nfds == 0) {
+			int rc = pthread_cond_timedwait(&self->wait_cond,
+			                                &self->wait_mutex, &ts);
+			if (rc == ETIMEDOUT)
+				break;
+		}
+		nfds = self->nfds;
+		self->nfds = 0;
+		pthread_mutex_unlock(&self->wait_mutex);
+	}
+
+	if (nfds > 0) {
+		char dummy[256];
+		while (read(self->event_pipe_rfd, dummy, sizeof(dummy)) == sizeof(dummy));
+	}
 
 	return nfds;
 }
