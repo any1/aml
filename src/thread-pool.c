@@ -98,19 +98,18 @@ static void* worker_fn(void* context)
 		if (!work->work)
 			break;
 
-		struct aml* aml = aml_try_ref(work->aml_id);
-		if (!aml)
-			goto done;
-
 		aml_callback_fn cb = aml_get_work_fn(work->work);
 		if (cb)
 			cb(work->work);
 
-		aml_emit(aml, work->work, 0);
-		aml_stop(aml, work->work);
-		aml_interrupt(aml);
-		aml_unref(aml);
-done:
+		struct aml* aml = aml_try_ref(work->aml_id);
+		if (aml) {
+			aml_emit(aml, work->work, 0);
+			aml_stop(aml, work->work);
+			aml_interrupt(aml);
+			aml_unref(aml);
+		}
+
 		free(work);
 	}
 
