@@ -974,6 +974,10 @@ int aml_get_fd(const void* ptr)
 	const struct aml_obj* obj = ptr;
 
 	switch (obj->type) {
+	case AML_OBJ_AML:;
+		const struct aml* aml = ptr;
+		return aml->backend.get_fd ?
+			aml->backend.get_fd(aml->state) : -1;
 	case AML_OBJ_HANDLER:
 		return ((struct aml_handler*)ptr)->fd;
 	default:
