@@ -26,7 +26,12 @@ struct aml_ticker;
 struct aml_signal;
 struct aml_work;
 
+enum {
+	AML_BACKEND_EDGE_TRIGGERED = 1 << 0,
+};
+
 struct aml_backend {
+	uint32_t flags;
 	void* (*new_state)(struct aml*);
 	void (*del_state)(void* state);
 	int (*poll)(void* state, int timeout);
