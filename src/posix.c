@@ -214,6 +214,12 @@ static void posix_del_state(void* state)
 	free(self);
 }
 
+static int posix_get_fd(const void* state)
+{
+	const struct posix_state* self = state;
+	return self->event_pipe_rfd;
+}
+
 static void posix__apply_fd_ops(struct posix_state* self)
 {
 	while (1) {
@@ -464,6 +470,7 @@ const struct aml_backend posix_backend = {
 	.flags = AML_BACKEND_EDGE_TRIGGERED,
 	.new_state = posix_new_state,
 	.del_state = posix_del_state,
+	.get_fd = posix_get_fd,
 	.poll = posix_poll,
 	.exit = NULL,
 	.add_fd = posix_add_fd,
