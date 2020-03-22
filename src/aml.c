@@ -633,8 +633,13 @@ void aml__handle_event(struct aml* self, struct aml_obj* obj)
 	if (obj->cb)
 		obj->cb(obj);
 
-	if (obj->type == AML_OBJ_HANDLER)
-		((struct aml_handler*)obj)->revents = 0;
+	if (obj->type == AML_OBJ_HANDLER) {
+		struct aml_handler* handler = (struct aml_handler*)obj;
+		handler->revents = 0;
+
+		if (self->backend.flags & AML_BACKEND_EDGE_TRIGGERED)
+			aml__mod_fd(self, handler);
+	}
 
 	obj->pending = 0;
 
