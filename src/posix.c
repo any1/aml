@@ -267,8 +267,10 @@ static void* posix_poll_thread(void* state)
 		if (nfds > 0) {
 			char one = 1;
 			write(self->event_pipe_wfd, &one, sizeof(one));
-			posix_wake_up_main(self, nfds);
 		}
+
+		if (nfds != 0)
+			posix_wake_up_main(self, nfds);
 	}
 
 	return NULL;
@@ -325,6 +327,8 @@ static int posix_poll(void* state, int timeout)
 	if (nfds > 0) {
 		char dummy[256];
 		while (read(self->event_pipe_rfd, dummy, sizeof(dummy)) == sizeof(dummy));
+	} else if (nfds < 0) {
+		errno = EINTR;
 	}
 
 	return nfds;
