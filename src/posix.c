@@ -197,6 +197,12 @@ static void posix_del_state(void* state)
 	pthread_cancel(self->poller_thread);
 	pthread_join(self->poller_thread, NULL);
 
+	struct posix_fd_op* op;
+	while ((op = posix__dequeue_fd_op(self))) {
+		aml_unref(op->handler);
+		free(op);
+	}
+
 	close(self->event_pipe_rfd);
 	close(self->event_pipe_wfd);
 
