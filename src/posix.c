@@ -43,16 +43,6 @@ struct signal_handler {
 
 LIST_HEAD(signal_handler_list, signal_handler);
 
-struct posix_work {
-	struct posix_state* state;
-	struct aml_work* work;
-	int32_t state_id;
-
-	TAILQ_ENTRY(posix_work) link;
-};
-
-TAILQ_HEAD(posix_work_queue, posix_work);
-
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 
 static int posix__enqueue_fd_op(struct posix_state* self, fd_op_fn call,
