@@ -74,7 +74,7 @@ static int posix__enqueue_fd_op(struct posix_state* self, fd_op_fn call,
 	TAILQ_INSERT_TAIL(&self->fd_ops, op, link);
 	pthread_mutex_unlock(&self->fd_ops_mutex);
 
-	aml_interrupt(self->aml);
+	pthread_kill(self->poller_thread, SIGUSR1);
 
 	return 0;
 }
@@ -235,7 +235,10 @@ static int posix_do_poll(struct posix_state* self, int timeout)
 			assert(pfd->fd == aml_get_fd(handler));
 			aml_emit(self->aml, handler, pfd->revents);
 
-			// TODO: Clear event mask until after dispatch
+			/* The event mask is cleared until it is set again
+			 * in aml_dispatch(). Otherwise this might spin.
+			 */
+			pfd->events &= ~pfd->revents;
 		}
 
 	return nfds;
@@ -247,6 +250,10 @@ static void posix_wake_up_main(struct posix_state* self, int nfds)
 	self->nfds = nfds;
 	pthread_cond_signal(&self->wait_cond);
 	pthread_mutex_unlock(&self->wait_mutex);
+}
+
+static void dummy_handler()
+{
 }
 
 static void* posix_poll_thread(void* state)
@@ -269,8 +276,14 @@ static void* posix_poll_thread(void* state)
 
 static int posix_spawn_poller(struct posix_state* self)
 {
+	struct sigaction sa = { .sa_handler = dummy_handler };
+	struct sigaction sa_old;
+	sigaction(SIGUSR1, &sa, &sa_old);
+
 	return pthread_create(&self->poller_thread, NULL, posix_poll_thread,
 	                      self);
+
+	sigaction(SIGUSR1, &sa_old, NULL);
 }
 
 static int posix_poll(void* state, int timeout)
@@ -426,6 +439,7 @@ static int posix_del_signal(void* state, struct aml_signal* sig)
 }
 
 const struct aml_backend posix_backend = {
+	.flags = AML_BACKEND_EDGE_TRIGGERED,
 	.new_state = posix_new_state,
 	.del_state = posix_del_state,
 	.poll = posix_poll,
