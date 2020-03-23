@@ -24,7 +24,6 @@
 #include <time.h>
 #include <signal.h>
 #include <pthread.h>
-#include <sys/sysinfo.h>
 
 #include "aml.h"
 #include "sys/queue.h"
