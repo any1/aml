@@ -34,6 +34,7 @@ struct aml_backend {
 	uint32_t flags;
 	void* (*new_state)(struct aml*);
 	void (*del_state)(void* state);
+	int (*get_fd)(const void* state);
 	int (*poll)(void* state, int timeout);
 	void (*exit)(void* state);
 	int (*add_fd)(void* state, struct aml_handler*);
