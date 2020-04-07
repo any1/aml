@@ -107,6 +107,9 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn,
 struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn done_fn,
                               void* userdata, aml_free_fn);
 
+struct aml_idle* aml_idle_new(aml_callback_fn done_fn, void* userdata,
+                              aml_free_fn);
+
 int aml_get_fd(const void* obj);
 
 void aml_set_userdata(void* obj, void* userdata, aml_free_fn);

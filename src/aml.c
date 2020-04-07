@@ -45,6 +45,7 @@ enum aml_obj_type {
 	AML_OBJ_TICKER,
 	AML_OBJ_SIGNAL,
 	AML_OBJ_WORK,
+	AML_OBJ_IDLE,
 };
 
 struct aml_obj {
@@ -100,6 +101,14 @@ struct aml_work {
 	aml_callback_fn work_fn;
 };
 
+struct aml_idle {
+	struct aml_obj obj;
+
+	LIST_ENTRY(aml_idle) link;
+};
+
+LIST_HEAD(aml_idle_list, aml_idle);
+
 struct aml {
 	struct aml_obj obj;
 
@@ -114,6 +123,7 @@ struct aml {
 	pthread_mutex_t obj_list_mutex;
 
 	struct aml_timer_list timer_list;
+	struct aml_idle_list idle_list;
 
 	struct aml_obj_queue event_queue;
 	pthread_mutex_t event_queue_mutex;
@@ -263,6 +273,7 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 
 	LIST_INIT(&self->obj_list);
 	LIST_INIT(&self->timer_list);
+	LIST_INIT(&self->idle_list);
 	TAILQ_INIT(&self->event_queue);
 
 	pthread_mutex_init(&self->event_queue_mutex, NULL);
@@ -418,6 +429,25 @@ struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
 	return self;
 }
 
+EXPORT
+struct aml_idle* aml_idle_new(aml_callback_fn callback, void* userdata,
+                              aml_free_fn free_fn)
+{
+	struct aml_idle* self = calloc(1, sizeof(*self));
+	if (!self)
+		return NULL;
+
+	self->obj.type = AML_OBJ_IDLE;
+	self->obj.ref = 1;
+	self->obj.userdata = userdata;
+	self->obj.free_fn = free_fn;
+	self->obj.cb = callback;
+
+	aml__obj_global_ref(&self->obj);
+
+	return self;
+}
+
 void aml__obj_ref(struct aml* self, void* obj)
 {
 	pthread_mutex_lock(&self->obj_list_mutex);
@@ -450,6 +480,16 @@ static bool aml__is_timer_started(struct aml* self, struct aml_timer* timer)
 	struct aml_timer* node;
 	LIST_FOREACH(node, &self->timer_list, link)
 		if (node == timer)
+			return true;
+
+	return false;
+}
+
+static bool aml__is_idle_started(struct aml* self, struct aml_idle* idle)
+{
+	struct aml_idle* node;
+	LIST_FOREACH(node, &self->idle_list, link)
+		if (node == idle)
 			return true;
 
 	return false;
@@ -489,6 +529,16 @@ int aml__start_work(struct aml* self, struct aml_work* work)
 	return -1;
 }
 
+int aml__start_idle(struct aml* self, struct aml_idle* idle)
+{
+	if (aml__is_idle_started(self, idle))
+		return -1;
+
+	aml__obj_ref(self, idle);
+	LIST_INSERT_HEAD(&self->idle_list, idle, link);
+	return 0;
+}
+
 EXPORT
 int aml_start(struct aml* self, void* obj)
 {
@@ -501,6 +551,7 @@ int aml_start(struct aml* self, void* obj)
 	case AML_OBJ_TICKER: return aml__start_timer(self, obj);
 	case AML_OBJ_SIGNAL: return aml__start_signal(self, obj);
 	case AML_OBJ_WORK: return aml__start_work(self, obj);
+	case AML_OBJ_IDLE: return aml__start_idle(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -547,6 +598,17 @@ int aml__stop_work(struct aml* self, struct aml_work* work)
 	return 0;
 }
 
+int aml__stop_idle(struct aml* self, struct aml_idle* idle)
+{
+	if (!aml__is_idle_started(self, idle))
+		return -1;
+
+	LIST_REMOVE(idle, link);
+	aml__obj_unref(self, idle);
+
+	return 0;
+}
+
 EXPORT
 int aml_stop(struct aml* self, void* obj)
 {
@@ -559,6 +621,7 @@ int aml_stop(struct aml* self, void* obj)
 	case AML_OBJ_TICKER: return aml__stop_timer(self, obj);
 	case AML_OBJ_SIGNAL: return aml__stop_signal(self, obj);
 	case AML_OBJ_WORK: return aml__stop_work(self, obj);
+	case AML_OBJ_IDLE: return aml__stop_idle(self, obj);
 	case AML_OBJ_UNSPEC: break;
 	}
 
@@ -621,6 +684,14 @@ void aml__handle_timeout(struct aml* self)
 	}
 }
 
+void aml__handle_idle(struct aml* self)
+{
+	struct aml_idle* idle;
+
+	LIST_FOREACH(idle, &self->idle_list, link)
+		if (idle->obj.cb)
+			idle->obj.cb(idle);
+}
 
 void aml__handle_event(struct aml* self, struct aml_obj* obj)
 {
@@ -675,6 +746,8 @@ void aml_dispatch(struct aml* self)
 	}
 
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
+
+	aml__handle_idle(self);
 }
 
 EXPORT
