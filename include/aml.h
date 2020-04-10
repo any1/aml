@@ -25,6 +25,7 @@ struct aml_timer;
 struct aml_ticker;
 struct aml_signal;
 struct aml_work;
+struct aml_idle;
 
 enum {
 	AML_BACKEND_EDGE_TRIGGERED = 1 << 0,
@@ -90,7 +91,7 @@ int aml_unref(void* obj);
  */
 unsigned long long aml_get_id(const void* obj);
 
-/* Try to reference and object with an id returned by aml_get_id().
+/* Try to reference an object with an id returned by aml_get_id().
  *
  * This increments the reference count by one.
  *
