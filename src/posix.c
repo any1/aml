@@ -373,7 +373,8 @@ static void posix_add_fd_op(struct posix_state* self, struct aml_handler* handle
 static void posix_mod_fd_op(struct posix_state* self, struct aml_handler* handler)
 {
 	int index = posix__find_handler(self, handler);
-	assert(index >= 0);
+	if (index < 0)
+		return;
 
 	self->fds[index].fd = aml_get_fd(handler);
 	self->fds[index].events = aml_get_event_mask(handler);
@@ -382,7 +383,8 @@ static void posix_mod_fd_op(struct posix_state* self, struct aml_handler* handle
 static void posix_del_fd_op(struct posix_state* self, struct aml_handler* handler)
 {
 	int index = posix__find_handler(self, handler);
-	assert(index >= 0);
+	if (index < 0)
+		return;
 
 	self->num_fds--;
 
