@@ -24,6 +24,7 @@
 #include <time.h>
 #include <signal.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "aml.h"
 #include "sys/queue.h"
@@ -58,8 +59,6 @@ struct aml_obj {
 
 	void* backend_data;
 
-	int pending;
-
 	LIST_ENTRY(aml_obj) link;
 	LIST_ENTRY(aml_obj) global_link;
 	TAILQ_ENTRY(aml_obj) event_link;
@@ -73,7 +72,7 @@ struct aml_handler {
 
 	int fd;
 	uint32_t event_mask;
-	uint32_t revents;
+	atomic_uint revents;
 
 	struct aml* parent;
 };
@@ -719,8 +718,6 @@ void aml__handle_event(struct aml* self, struct aml_obj* obj)
 			aml__mod_fd(self, handler);
 	}
 
-	obj->pending = 0;
-
 	aml_unref(obj);
 }
 
@@ -942,11 +939,12 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 {
 	struct aml_obj* obj = ptr;
 
-	if (obj->type == AML_OBJ_HANDLER)
-		((struct aml_handler*)ptr)->revents |= revents;
-
-	if (obj->pending++ > 0)
-		return;
+	if (obj->type == AML_OBJ_HANDLER) {
+		struct aml_handler* handler = ptr;
+		uint32_t old = atomic_fetch_or(&handler->revents, revents);
+		if (old != 0)
+			return;
+	}
 
 	sigset_t sig_old, sig_new;
 	sigfillset(&sig_new);
