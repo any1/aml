@@ -122,6 +122,8 @@ struct aml {
 	pthread_mutex_t obj_list_mutex;
 
 	struct aml_timer_list timer_list;
+	pthread_mutex_t timer_list_mutex;
+
 	struct aml_idle_list idle_list;
 
 	struct aml_obj_queue event_queue;
@@ -277,6 +279,7 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 
 	pthread_mutex_init(&self->event_queue_mutex, NULL);
 	pthread_mutex_init(&self->obj_list_mutex, NULL);
+	pthread_mutex_init(&self->timer_list_mutex, NULL);
 
 	if (backend_size > sizeof(self->backend))
 		return NULL;
@@ -516,7 +519,10 @@ static int aml__start_handler(struct aml* self, struct aml_handler* handler)
 static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 {
 	timer->deadline = gettime_ms() + timer->timeout;
+
+	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
+	pthread_mutex_unlock(&self->timer_list_mutex);
 
 	return 0;
 }
@@ -581,7 +587,9 @@ static int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 
 static int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 {
+	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_REMOVE(timer, link);
+	pthread_mutex_unlock(&self->timer_list_mutex);
 	return 0;
 }
 
@@ -642,11 +650,14 @@ static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 	struct aml_timer* result = NULL;
 
 	struct aml_timer* timer;
+
+	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_FOREACH(timer, &self->timer_list, link)
 		if (timer->deadline < deadline) {
 			deadline = timer->deadline;
 			result = timer;
 		}
+	pthread_mutex_unlock(&self->timer_list_mutex);
 
 	return result;
 }
@@ -814,6 +825,7 @@ static void aml__free(struct aml* self)
 		aml_unref(obj);
 	}
 
+	pthread_mutex_destroy(&self->timer_list_mutex);
 	pthread_mutex_destroy(&self->obj_list_mutex);
 	pthread_mutex_destroy(&self->event_queue_mutex);
 
