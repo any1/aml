@@ -59,6 +59,10 @@ struct posix_state {
 	int nfds;
 	pthread_mutex_t wait_mutex;
 	pthread_cond_t wait_cond;
+
+	bool waiting_for_dispatch;
+	pthread_mutex_t dispatch_mutex;
+	pthread_cond_t dispatch_cond;
 };
 
 struct signal_handler {
@@ -71,6 +75,7 @@ struct signal_handler {
 LIST_HEAD(signal_handler_list, signal_handler);
 
 static int posix_spawn_poller(struct posix_state* self);
+static void posix_post_dispatch(void* state);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 
@@ -178,6 +183,9 @@ static void* posix_new_state(struct aml* aml)
 	pthread_mutex_init(&self->wait_mutex, NULL);
 	pthread_cond_init(&self->wait_cond, NULL);
 
+	pthread_mutex_init(&self->dispatch_mutex, NULL);
+	pthread_cond_init(&self->dispatch_cond, NULL);
+
 	if (posix_init_event_pipe(self) < 0)
 		goto pipe_failure;
 
@@ -210,6 +218,8 @@ static void posix_del_state(void* state)
 {
 	struct posix_state* self = state;
 
+	posix_post_dispatch(self);
+
 	pthread_cancel(self->poller_thread);
 	pthread_join(self->poller_thread, NULL);
 
@@ -222,6 +232,8 @@ static void posix_del_state(void* state)
 	close(self->event_pipe_rfd);
 	close(self->event_pipe_wfd);
 
+	pthread_cond_destroy(&self->dispatch_cond);
+	pthread_mutex_destroy(&self->dispatch_mutex);
 	pthread_cond_destroy(&self->wait_cond);
 	pthread_mutex_destroy(&self->wait_mutex);
 	pthread_mutex_destroy(&self->fd_ops_mutex);
@@ -274,10 +286,19 @@ static int posix_do_poll(struct posix_state* self, int timeout)
 
 static void posix_wake_up_main(struct posix_state* self, int nfds)
 {
+	pthread_mutex_lock(&self->dispatch_mutex);
+	self->waiting_for_dispatch = true;
+	pthread_mutex_unlock(&self->dispatch_mutex);
+
 	pthread_mutex_lock(&self->wait_mutex);
 	self->nfds = nfds;
 	pthread_cond_signal(&self->wait_cond);
 	pthread_mutex_unlock(&self->wait_mutex);
+
+	pthread_mutex_lock(&self->dispatch_mutex);
+	while (self->waiting_for_dispatch)
+		pthread_cond_wait(&self->dispatch_cond, &self->dispatch_mutex);
+	pthread_mutex_unlock(&self->dispatch_mutex);
 }
 
 static void dummy_handler()
@@ -484,6 +505,16 @@ static int posix_del_signal(void* state, struct aml_signal* sig)
 	return 0;
 }
 
+static void posix_post_dispatch(void* state)
+{
+	struct posix_state* self = state;
+
+	pthread_mutex_lock(&self->dispatch_mutex);
+	self->waiting_for_dispatch = false;
+	pthread_cond_signal(&self->dispatch_cond);
+	pthread_mutex_unlock(&self->dispatch_mutex);
+}
+
 const struct aml_backend posix_backend = {
 	.flags = AML_BACKEND_EDGE_TRIGGERED,
 	.new_state = posix_new_state,
@@ -496,4 +527,5 @@ const struct aml_backend posix_backend = {
 	.del_fd = posix_del_fd,
 	.add_signal = posix_add_signal,
 	.del_signal = posix_del_signal,
+	.post_dispatch = posix_post_dispatch,
 };
