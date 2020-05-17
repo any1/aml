@@ -274,11 +274,6 @@ static int posix_do_poll(struct posix_state* self, int timeout)
 
 			assert(pfd->fd == aml_get_fd(handler));
 			aml_emit(self->aml, handler, pfd->revents);
-
-			/* The event mask is cleared until it is set again
-			 * in aml_dispatch(). Otherwise this might spin.
-			 */
-			pfd->events &= ~pfd->revents;
 		}
 
 	return nfds;
@@ -516,7 +511,6 @@ static void posix_post_dispatch(void* state)
 }
 
 const struct aml_backend posix_backend = {
-	.flags = AML_BACKEND_EDGE_TRIGGERED,
 	.new_state = posix_new_state,
 	.del_state = posix_del_state,
 	.get_fd = posix_get_fd,
