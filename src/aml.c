@@ -234,6 +234,9 @@ static void aml__destroy_self_pipe(void* userdata)
 
 static int aml__init_self_pipe(struct aml* self)
 {
+	if (self->backend.interrupt)
+		return 0;
+
 	int fds[2];
 	if (pipe(fds) < 0)
 		return -1;
@@ -264,6 +267,11 @@ failure:
 EXPORT
 void aml_interrupt(struct aml* self)
 {
+	if (self->backend.interrupt) {
+		self->backend.interrupt(self->state);
+		return;
+	}
+
 	char one = 1;
 	write(self->self_pipe_wfd, &one, sizeof(one));
 }
