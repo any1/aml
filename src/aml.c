@@ -177,7 +177,7 @@ static int aml__mod_fd(struct aml* self, struct aml_handler* handler)
 	return self->backend.mod_fd(self->state, handler);
 }
 
-void aml__dont_block(int fd)
+static void aml__dont_block(int fd)
 {
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
@@ -189,17 +189,17 @@ static uint64_t gettime_ms(void)
 	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 }
 
-void aml__ref_lock(void)
+static void aml__ref_lock(void)
 {
 	pthread_mutex_lock(&aml__ref_mutex);
 }
 
-void aml__ref_unlock(void)
+static void aml__ref_unlock(void)
 {
 	pthread_mutex_unlock(&aml__ref_mutex);
 }
 
-void aml__obj_global_ref(struct aml_obj* obj)
+static void aml__obj_global_ref(struct aml_obj* obj)
 {
 	aml__ref_lock();
 	obj->id = aml__obj_id++;
@@ -457,7 +457,7 @@ static bool aml__obj_is_started_unlocked(struct aml* self, void* obj)
 	return false;
 }
 
-int aml__obj_try_add(struct aml* self, void* obj)
+static int aml__obj_try_add(struct aml* self, void* obj)
 {
 	int rc = -1;
 
@@ -474,20 +474,20 @@ int aml__obj_try_add(struct aml* self, void* obj)
 	return rc;
 }
 
-void aml__obj_remove_unlocked(struct aml* self, void* obj)
+static void aml__obj_remove_unlocked(struct aml* self, void* obj)
 {
 	LIST_REMOVE((struct aml_obj*)obj, link);
 	aml_unref(obj);
 }
 
-void aml__obj_remove(struct aml* self, void* obj)
+static void aml__obj_remove(struct aml* self, void* obj)
 {
 	pthread_mutex_lock(&self->obj_list_mutex);
 	aml__obj_remove_unlocked(self, obj);
 	pthread_mutex_unlock(&self->obj_list_mutex);
 }
 
-int aml__obj_try_remove(struct aml* self, void* obj)
+static int aml__obj_try_remove(struct aml* self, void* obj)
 {
 	int rc = -1;
 
@@ -503,7 +503,7 @@ int aml__obj_try_remove(struct aml* self, void* obj)
 	return rc;
 }
 
-int aml__start_handler(struct aml* self, struct aml_handler* handler)
+static int aml__start_handler(struct aml* self, struct aml_handler* handler)
 {
 	if (aml__add_fd(self, handler) < 0)
 		return -1;
@@ -513,7 +513,7 @@ int aml__start_handler(struct aml* self, struct aml_handler* handler)
 	return 0;
 }
 
-int aml__start_timer(struct aml* self, struct aml_timer* timer)
+static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 {
 	timer->deadline = gettime_ms() + timer->timeout;
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
@@ -521,17 +521,17 @@ int aml__start_timer(struct aml* self, struct aml_timer* timer)
 	return 0;
 }
 
-int aml__start_signal(struct aml* self, struct aml_signal* sig)
+static int aml__start_signal(struct aml* self, struct aml_signal* sig)
 {
 	return self->backend.add_signal(self->state, sig);
 }
 
-int aml__start_work(struct aml* self, struct aml_work* work)
+static int aml__start_work(struct aml* self, struct aml_work* work)
 {
 	return self->backend.thread_pool_enqueue(self, work);
 }
 
-int aml__start_idle(struct aml* self, struct aml_idle* idle)
+static int aml__start_idle(struct aml* self, struct aml_idle* idle)
 {
 	LIST_INSERT_HEAD(&self->idle_list, idle, link);
 	return 0;
@@ -569,7 +569,7 @@ int aml_start(struct aml* self, void* obj)
 	return -1;
 }
 
-int aml__stop_handler(struct aml* self, struct aml_handler* handler)
+static int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 {
 	if (aml__del_fd(self, handler) < 0)
 		return -1;
@@ -579,24 +579,24 @@ int aml__stop_handler(struct aml* self, struct aml_handler* handler)
 	return 0;
 }
 
-int aml__stop_timer(struct aml* self, struct aml_timer* timer)
+static int aml__stop_timer(struct aml* self, struct aml_timer* timer)
 {
 	LIST_REMOVE(timer, link);
 	return 0;
 }
 
-int aml__stop_signal(struct aml* self, struct aml_signal* sig)
+static int aml__stop_signal(struct aml* self, struct aml_signal* sig)
 {
 	return self->backend.del_signal(self->state, sig);
 }
 
-int aml__stop_work(struct aml* self, struct aml_work* work)
+static int aml__stop_work(struct aml* self, struct aml_work* work)
 {
 	/* Note: The cb may be executed anyhow */
 	return 0;
 }
 
-int aml__stop_idle(struct aml* self, struct aml_idle* idle)
+static int aml__stop_idle(struct aml* self, struct aml_idle* idle)
 {
 	LIST_REMOVE(idle, link);
 	return 0;
@@ -636,7 +636,7 @@ int aml_stop(struct aml* self, void* obj)
 	return 0;
 }
 
-struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
+static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 {
 	uint64_t deadline = UINT64_MAX;
 	struct aml_timer* result = NULL;
@@ -667,7 +667,7 @@ int aml_get_next_timeout(struct aml* self, int timeout)
 	return timeout < 0 ? timer_timeout : MIN(timeout, timer_timeout);
 }
 
-void aml__handle_timeout(struct aml* self)
+static void aml__handle_timeout(struct aml* self)
 {
 	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
 
@@ -691,7 +691,7 @@ void aml__handle_timeout(struct aml* self)
 	}
 }
 
-void aml__handle_idle(struct aml* self)
+static void aml__handle_idle(struct aml* self)
 {
 	struct aml_idle* idle;
 
@@ -700,7 +700,7 @@ void aml__handle_idle(struct aml* self)
 			idle->obj.cb(idle);
 }
 
-void aml__handle_event(struct aml* self, struct aml_obj* obj)
+static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 {
 	/* A reference is kept here in case an object is stopped inside the
 	 * callback. We want the object to live until we're done with it.
@@ -729,7 +729,7 @@ int aml_poll(struct aml* self, int timeout)
 	return aml__poll(self, next_timeout);
 }
 
-struct aml_obj* aml__event_dequeue(struct aml* self)
+static struct aml_obj* aml__event_dequeue(struct aml* self)
 {
 	pthread_mutex_lock(&self->event_queue_mutex);
 	struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
@@ -794,7 +794,7 @@ int aml_ref(void* obj)
 	return ref;
 }
 
-void aml__free(struct aml* self)
+static void aml__free(struct aml* self)
 {
 	while (!LIST_EMPTY(&self->obj_list)) {
 		struct aml_obj* obj = LIST_FIRST(&self->obj_list);
@@ -820,7 +820,7 @@ void aml__free(struct aml* self)
 	free(self);
 }
 
-void aml__free_handler(struct aml_handler* self)
+static void aml__free_handler(struct aml_handler* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
@@ -828,7 +828,7 @@ void aml__free_handler(struct aml_handler* self)
 	free(self);
 }
 
-void aml__free_timer(struct aml_timer* self)
+static void aml__free_timer(struct aml_timer* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
@@ -836,7 +836,7 @@ void aml__free_timer(struct aml_timer* self)
 	free(self);
 }
 
-void aml__free_signal(struct aml_timer* self)
+static void aml__free_signal(struct aml_timer* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
@@ -844,7 +844,7 @@ void aml__free_signal(struct aml_timer* self)
 	free(self);
 }
 
-void aml__free_work(struct aml_timer* self)
+static void aml__free_work(struct aml_timer* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
