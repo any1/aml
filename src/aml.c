@@ -179,6 +179,12 @@ static int aml__mod_fd(struct aml* self, struct aml_handler* handler)
 	return self->backend.mod_fd(self->state, handler);
 }
 
+static void aml__post_dispatch(struct aml* self)
+{
+	if (self->backend.post_dispatch)
+		self->backend.post_dispatch(self->state);
+}
+
 static void aml__dont_block(int fd)
 {
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
@@ -769,6 +775,7 @@ void aml_dispatch(struct aml* self)
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
 
 	aml__handle_idle(self);
+	aml__post_dispatch(self);
 }
 
 EXPORT
