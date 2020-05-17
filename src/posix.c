@@ -76,6 +76,7 @@ LIST_HEAD(signal_handler_list, signal_handler);
 
 static int posix_spawn_poller(struct posix_state* self);
 static void posix_post_dispatch(void* state);
+static void posix_interrupt(void* state);
 
 static struct signal_handler_list signal_handlers = LIST_HEAD_INITIALIZER(NULL);
 
@@ -95,7 +96,7 @@ static int posix__enqueue_fd_op(struct posix_state* self, fd_op_fn call,
 	TAILQ_INSERT_TAIL(&self->fd_ops, op, link);
 	pthread_mutex_unlock(&self->fd_ops_mutex);
 
-	pthread_kill(self->poller_thread, SIGUSR1);
+	posix_interrupt(self);
 
 	return 0;
 }
@@ -510,6 +511,12 @@ static void posix_post_dispatch(void* state)
 	pthread_mutex_unlock(&self->dispatch_mutex);
 }
 
+static void posix_interrupt(void* state)
+{
+	struct posix_state* self = state;
+	pthread_kill(self->poller_thread, SIGUSR1);
+}
+
 const struct aml_backend posix_backend = {
 	.new_state = posix_new_state,
 	.del_state = posix_del_state,
@@ -522,4 +529,5 @@ const struct aml_backend posix_backend = {
 	.add_signal = posix_add_signal,
 	.del_signal = posix_del_signal,
 	.post_dispatch = posix_post_dispatch,
+	.interrupt = posix_interrupt,
 };
