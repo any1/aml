@@ -13,6 +13,7 @@ buildtype = get_option('buildtype')
 c_args = [
 	'-D_POSIX_C_SOURCE=200809L',
 	'-fvisibility=hidden',
+	'-Wmissing-prototypes',
 ]
 
 if buildtype != 'debug' and buildtype != 'debugoptimized'
