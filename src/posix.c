@@ -105,7 +105,7 @@ static struct posix_fd_op* posix__dequeue_fd_op(struct posix_state* self)
 	return op;
 }
 
-struct signal_handler* signal_handler_find_by_signo(int signo)
+static struct signal_handler* signal_handler_find_by_signo(int signo)
 {
 	struct signal_handler* handler;
 
@@ -116,7 +116,7 @@ struct signal_handler* signal_handler_find_by_signo(int signo)
 	return NULL;
 }
 
-struct signal_handler* signal_handler_find_by_obj(struct aml_signal* obj)
+static struct signal_handler* signal_handler_find_by_obj(struct aml_signal* obj)
 {
 	struct signal_handler* handler;
 
