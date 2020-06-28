@@ -26,6 +26,7 @@
 #include <errno.h>
 
 #include "aml.h"
+#include "backend.h"
 #include "sys/queue.h"
 
 struct posix_state;

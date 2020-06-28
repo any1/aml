@@ -27,34 +27,11 @@ struct aml_signal;
 struct aml_work;
 struct aml_idle;
 
-enum {
-	AML_BACKEND_EDGE_TRIGGERED = 1 << 0,
-};
-
-struct aml_backend {
-	uint32_t flags;
-	void* (*new_state)(struct aml*);
-	void (*del_state)(void* state);
-	int (*get_fd)(const void* state);
-	int (*poll)(void* state, int timeout);
-	void (*exit)(void* state);
-	int (*add_fd)(void* state, struct aml_handler*);
-	int (*mod_fd)(void* state, struct aml_handler*);
-	int (*del_fd)(void* state, struct aml_handler*);
-	int (*add_signal)(void* state, struct aml_signal*);
-	int (*del_signal)(void* state, struct aml_signal*);
-	void (*post_dispatch)(void* state);
-	void (*interrupt)(void* state);
-	int (*thread_pool_acquire)(struct aml*, int n_threads);
-	void (*thread_pool_release)(struct aml*);
-	int (*thread_pool_enqueue)(struct aml*, struct aml_work*);
-};
-
 typedef void (*aml_callback_fn)(void* obj);
 typedef void (*aml_free_fn)(void*);
 
 /* Create a new main loop instance */
-struct aml* aml_new(const struct aml_backend* backend, size_t backend_size);
+struct aml* aml_new(void);
 
 /* The backend should supply a minimum of n worker threads in its thread pool.
  *
@@ -162,16 +139,6 @@ int aml_get_fd(const void* obj);
 void aml_set_userdata(void* obj, void* userdata, aml_free_fn);
 void* aml_get_userdata(const void* obj);
 
-/* These are for setting random data required by the backend implementation.
- *
- * The backend implementation shall NOT use aml_set_userdata() or
- * aml_get_userdata().
- */
-void aml_set_backend_data(void* ptr, void* data);
-void* aml_get_backend_data(const void* ptr);
-
-void* aml_get_backend_state(const struct aml*);
-
 void aml_set_event_mask(struct aml_handler* obj, uint32_t event_mask);
 uint32_t aml_get_event_mask(const struct aml_handler* obj);
 
@@ -204,15 +171,6 @@ int aml_stop(struct aml*, void* obj);
 /* Get the signal assigned to a signal handler.
  */
 int aml_get_signo(const struct aml_signal* sig);
-
-/* Get the work function pointer assigned to a work object.
- */
-aml_callback_fn aml_get_work_fn(const struct aml_work*);
-
-/* revents is only used for fd events. Zero otherwise.
- * This function may be called inside a signal handler
- */
-void aml_emit(struct aml* self, void* obj, uint32_t revents);
 
 /* Get time in milliseconds until the next timeout event.
  *

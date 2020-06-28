@@ -27,6 +27,7 @@
 #include <stdatomic.h>
 
 #include "aml.h"
+#include "backend.h"
 #include "sys/queue.h"
 #include "thread-pool.h"
 
@@ -277,7 +278,7 @@ void aml_interrupt(struct aml* self)
 }
 
 EXPORT
-struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
+struct aml* aml_new(void)
 {
 	struct aml* self = calloc(1, sizeof(*self));
 	if (!self)
@@ -295,13 +296,7 @@ struct aml* aml_new(const struct aml_backend* backend, size_t backend_size)
 	pthread_mutex_init(&self->obj_list_mutex, NULL);
 	pthread_mutex_init(&self->timer_list_mutex, NULL);
 
-	if (backend_size > sizeof(self->backend))
-		return NULL;
-
-	if (backend)
-		memcpy(&self->backend, backend, backend_size);
-	else
-		memcpy(&self->backend, &posix_backend, sizeof(self->backend));
+	memcpy(&self->backend, &posix_backend, sizeof(self->backend));
 
 	if (!self->backend.thread_pool_acquire)
 		self->backend.thread_pool_acquire = thread_pool_acquire_default;
