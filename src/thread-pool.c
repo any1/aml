@@ -23,6 +23,7 @@
 #include <limits.h>
 
 #include "aml.h"
+#include "backend.h"
 #include "thread-pool.h"
 #include "sys/queue.h"
 
