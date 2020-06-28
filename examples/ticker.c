@@ -2,7 +2,7 @@
 #include <aml.h>
 #include <signal.h>
 
-void on_tick(void* ticker)
+static void on_tick(void* ticker)
 {
 	int* count_ptr = aml_get_userdata(ticker);
 
@@ -14,14 +14,14 @@ void on_tick(void* ticker)
 		aml_exit(aml_get_default());
 }
 
-void on_sigint(void* sig)
+static void on_sigint(void* sig)
 {
 	aml_exit(aml_get_default());
 }
 
 int main()
 {
-	struct aml* aml = aml_new(NULL, 0);
+	struct aml* aml = aml_new();
 	if (!aml)
 		return 1;
 
