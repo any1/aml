@@ -33,7 +33,7 @@
 
 #define EXPORT __attribute__((visibility("default")))
 
-#define EVENT_MASK_DEFAULT (POLLIN | POLLPRI)
+#define EVENT_MASK_DEFAULT AML_EVENT_READ
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -72,7 +72,7 @@ struct aml_handler {
 	struct aml_obj obj;
 
 	int fd;
-	uint32_t event_mask;
+	enum aml_event event_mask;
 	atomic_uint revents;
 
 	struct aml* parent;
@@ -980,22 +980,22 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 }
 
 EXPORT
-uint32_t aml_get_event_mask(const struct aml_handler* handler)
+enum aml_event aml_get_event_mask(const struct aml_handler* handler)
 {
 	return handler->event_mask;
 }
 
 EXPORT
-void aml_set_event_mask(struct aml_handler* handler, uint32_t event_mask)
+void aml_set_event_mask(struct aml_handler* handler, enum aml_event mask)
 {
-	handler->event_mask = event_mask;
+	handler->event_mask = mask;
 
 	if (handler->parent)
 		aml__mod_fd(handler->parent, handler);
 }
 
 EXPORT
-uint32_t aml_get_revents(const struct aml_handler* handler)
+enum aml_event aml_get_revents(const struct aml_handler* handler)
 {
 	return handler->revents;
 }

@@ -263,6 +263,18 @@ static void posix__apply_fd_ops(struct posix_state* self)
 	}
 }
 
+static enum aml_event posix_poll_events_to_aml_events(uint32_t poll_events)
+{
+	enum aml_event aml_events = 0;
+
+	if (poll_events & (POLLIN | POLLPRI))
+		aml_events |= AML_EVENT_READ;
+	if (poll_events & POLLOUT)
+		aml_events |= AML_EVENT_READ;
+
+	return aml_events;
+}
+
 static int posix_do_poll(struct posix_state* self, int timeout)
 {
 	int nfds = poll(self->fds, self->num_fds, timeout);
@@ -275,7 +287,9 @@ static int posix_do_poll(struct posix_state* self, int timeout)
 			struct aml_handler* handler = self->handlers[i];
 
 			assert(pfd->fd == aml_get_fd(handler));
-			aml_emit(self->aml, handler, pfd->revents);
+			enum aml_event events =
+				posix_poll_events_to_aml_events(pfd->revents);
+			aml_emit(self->aml, handler, events);
 		}
 
 	return nfds;
@@ -380,6 +394,19 @@ static int posix_poll(void* state, int timeout)
 	return nfds;
 }
 
+static uint32_t posix_get_event_mask(struct aml_handler* handler)
+{
+	uint32_t poll_events  = 0;
+	enum aml_event aml_events = aml_get_event_mask(handler);
+
+	if (aml_events & AML_EVENT_READ)
+		poll_events |= POLLIN | POLLPRI;
+	if (aml_events & AML_EVENT_WRITE)
+		poll_events |= POLLOUT;
+
+	return poll_events;
+}
+
 static void posix_add_fd_op(struct posix_state* self, struct aml_handler* handler)
 {
 	if (self->num_fds >= self->max_fds) {
@@ -395,7 +422,7 @@ static void posix_add_fd_op(struct posix_state* self, struct aml_handler* handle
 	}
 
 	struct pollfd* event = &self->fds[self->num_fds];
-	event->events = aml_get_event_mask(handler);
+	event->events = posix_get_event_mask(handler);
 	event->revents = 0;
 	event->fd = aml_get_fd(handler);
 
@@ -411,7 +438,7 @@ static void posix_mod_fd_op(struct posix_state* self, struct aml_handler* handle
 		return;
 
 	self->fds[index].fd = aml_get_fd(handler);
-	self->fds[index].events = aml_get_event_mask(handler);
+	self->fds[index].events = posix_get_event_mask(handler);
 }
 
 static void posix_del_fd_op(struct posix_state* self, struct aml_handler* handler)

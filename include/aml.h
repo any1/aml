@@ -27,6 +27,12 @@ struct aml_signal;
 struct aml_work;
 struct aml_idle;
 
+enum aml_event {
+	AML_EVENT_NONE = 0,
+	AML_EVENT_READ = 1 << 0,
+	AML_EVENT_WRITE = 1 << 1,
+};
+
 typedef void (*aml_callback_fn)(void* obj);
 typedef void (*aml_free_fn)(void*);
 
@@ -139,12 +145,12 @@ int aml_get_fd(const void* obj);
 void aml_set_userdata(void* obj, void* userdata, aml_free_fn);
 void* aml_get_userdata(const void* obj);
 
-void aml_set_event_mask(struct aml_handler* obj, uint32_t event_mask);
-uint32_t aml_get_event_mask(const struct aml_handler* obj);
+void aml_set_event_mask(struct aml_handler* obj, enum aml_event mask);
+enum aml_event aml_get_event_mask(const struct aml_handler* obj);
 
 /* Check which events are pending on an fd event handler.
  */
-uint32_t aml_get_revents(const struct aml_handler* obj);
+enum aml_event aml_get_revents(const struct aml_handler* obj);
 
 /* Set timeout/period of a timer/ticker
  *
