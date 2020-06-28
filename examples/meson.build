@@ -19,3 +19,14 @@ executable(
 		threads,
 	]
 )
+
+executable(
+	'nested-ticker',
+	[
+		'nested-ticker.c',
+	],
+	dependencies: [
+		aml_dep,
+		threads,
+	]
+)
