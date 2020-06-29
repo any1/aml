@@ -31,7 +31,7 @@ inc = include_directories('include')
 
 sources = [
 	'src/aml.c',
-	'src/posix.c',
+	'src/epoll.c',
 	'src/thread-pool.c',
 ]
 
