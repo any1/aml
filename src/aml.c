@@ -680,7 +680,6 @@ static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 	return result;
 }
 
-EXPORT
 int aml_get_next_timeout(struct aml* self, int timeout)
 {
 	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
@@ -968,7 +967,6 @@ void aml_set_userdata(void* obj, void* userdata, aml_free_fn free_fn)
 	aml_obj->free_fn = free_fn;
 }
 
-EXPORT
 void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 {
 	struct aml_obj* obj = ptr;
@@ -1037,27 +1035,23 @@ int aml_get_signo(const struct aml_signal* sig)
 	return sig->signo;
 }
 
-EXPORT
 aml_callback_fn aml_get_work_fn(const struct aml_work* work)
 {
 	return work->work_fn;
 }
 
-EXPORT
 void* aml_get_backend_data(const void* ptr)
 {
 	const struct aml_obj* obj = ptr;
 	return obj->backend_data;
 }
 
-EXPORT
 void aml_set_backend_data(void* ptr, void* data)
 {
 	struct aml_obj* obj = ptr;
 	obj->backend_data = data;
 }
 
-EXPORT
 void* aml_get_backend_state(const struct aml* self)
 {
 	return self->state;

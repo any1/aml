@@ -177,15 +177,3 @@ int aml_stop(struct aml*, void* obj);
 /* Get the signal assigned to a signal handler.
  */
 int aml_get_signo(const struct aml_signal* sig);
-
-/* Get time in milliseconds until the next timeout event.
- *
- * If timeout is -1, this returns:
- *  -1 if no event is pending
- *  0 if a timer has already expired
- *  time until next event, otherwise
- *
- * Otherwise, if timeout is less than the time until the next event, timeout is
- * returned, if it is greater, then the time until next event is returned.
- */
-int aml_get_next_timeout(struct aml* self, int timeout);
