@@ -16,4 +16,4 @@ Features:
  * Signal handlers
  * Idle dispatch callbacks
  * Thread pool
- * Can act as a compatibility layer on top of another event loop
+ * Interoperability with other event loops
