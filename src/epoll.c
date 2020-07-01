@@ -31,7 +31,7 @@ struct epoll_state {
 	struct aml* aml;
 
 	int epoll_fd;
-	int timer_fd; // TODO: Actually use the timerfd
+	int timer_fd;
 };
 
 struct epoll_signal {
@@ -90,8 +90,12 @@ static int epoll_get_fd(const void* state)
 static void epoll_emit_event(struct epoll_state* self,
 		struct epoll_event* event)
 {
-	if (event->data.ptr == NULL)
-		return; // TODO: Read timerfd count?
+	if (event->data.ptr == NULL) {
+		// Must be the timerfd
+		uint64_t count = 0;
+		read(self->timer_fd, &count, sizeof(count));
+		return;
+	}
 
 	enum aml_event aml_events = AML_EVENT_NONE;
 	if (event->events & (EPOLLIN | EPOLLPRI))
@@ -232,6 +236,21 @@ static int epoll_del_signal(void* state, struct aml_signal* sig)
 	return rc;
 }
 
+static int epoll_set_timeout(void* state, int timeout)
+{
+	struct epoll_state* self = state;
+
+	struct itimerspec it = {
+		.it_value = {
+			.tv_sec = (uint32_t)timeout / UINT32_C(1000),
+			.tv_nsec = ((uint32_t)timeout % UINT32_C(1000)) *
+				UINT32_C(1000000),
+		},
+	};
+
+	return timerfd_settime(self->timer_fd, 0, &it, NULL);
+}
+
 const struct aml_backend epoll_backend = {
 	.new_state = epoll_new_state,
 	.del_state = epoll_del_state,
@@ -242,4 +261,5 @@ const struct aml_backend epoll_backend = {
 	.del_fd = epoll_del_fd,
 	.add_signal = epoll_add_signal,
 	.del_signal = epoll_del_signal,
+	.set_timeout = epoll_set_timeout,
 };

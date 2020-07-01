@@ -180,6 +180,11 @@ static int aml__mod_fd(struct aml* self, struct aml_handler* handler)
 	return self->backend.mod_fd(self->state, handler);
 }
 
+static int aml__set_timeout(struct aml* self, int timeout)
+{
+	return self->backend.set_timeout(self->state, timeout);
+}
+
 static void aml__post_dispatch(struct aml* self)
 {
 	if (self->backend.post_dispatch)
@@ -533,6 +538,10 @@ static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
 	pthread_mutex_unlock(&self->timer_list_mutex);
 
+	int next_timeout = aml_get_next_timeout(self, -1);
+	if (next_timeout >= 0)
+		aml__set_timeout(self, next_timeout);
+
 	return 0;
 }
 
@@ -745,8 +754,7 @@ static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 EXPORT
 int aml_poll(struct aml* self, int timeout)
 {
-	int next_timeout = aml_get_next_timeout(self, timeout);
-	return aml__poll(self, next_timeout);
+	return aml__poll(self, timeout);
 }
 
 static struct aml_obj* aml__event_dequeue(struct aml* self)
@@ -763,6 +771,10 @@ EXPORT
 void aml_dispatch(struct aml* self)
 {
 	aml__handle_timeout(self);
+
+	int next_timeout = aml_get_next_timeout(self, -1);
+	if (next_timeout >= 0)
+		aml__set_timeout(self, next_timeout);
 
 	sigset_t sig_old, sig_new;
 	sigfillset(&sig_new);
