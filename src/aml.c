@@ -867,7 +867,7 @@ static void aml__free_timer(struct aml_timer* self)
 	free(self);
 }
 
-static void aml__free_signal(struct aml_timer* self)
+static void aml__free_signal(struct aml_signal* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
@@ -875,7 +875,15 @@ static void aml__free_signal(struct aml_timer* self)
 	free(self);
 }
 
-static void aml__free_work(struct aml_timer* self)
+static void aml__free_work(struct aml_work* self)
+{
+	if (self->obj.free_fn)
+		self->obj.free_fn(self->obj.userdata);
+
+	free(self);
+}
+
+static void aml__free_idle(struct aml_idle* self)
 {
 	if (self->obj.free_fn)
 		self->obj.free_fn(self->obj.userdata);
@@ -914,6 +922,9 @@ int aml_unref(void* obj)
 		break;
 	case AML_OBJ_WORK:
 		aml__free_work(obj);
+		break;
+	case AML_OBJ_IDLE:
+		aml__free_idle(obj);
 		break;
 	default:
 		abort();
