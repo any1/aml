@@ -652,10 +652,8 @@ int aml_stop(struct aml* self, void* obj)
 {
 	aml_ref(obj);
 
-	if (aml__obj_try_remove(self, obj) < 0)
-		return -1;
-
-	aml__stop_unchecked(self, obj);
+	if (aml__obj_try_remove(self, obj) >= 0)
+		aml__stop_unchecked(self, obj);
 
 	aml_unref(obj);
 
