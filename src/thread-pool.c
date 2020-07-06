@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <limits.h>
+#include <signal.h>
 
 #include "aml.h"
 #include "backend.h"
@@ -89,6 +90,10 @@ static struct default_work* dequeue_work(void)
 static void* worker_fn(void* context)
 {
 	(void)context;
+	sigset_t ss;
+	sigfillset(&ss);
+	sigdelset(&ss, SIGCHLD);
+	pthread_sigmask(SIG_BLOCK, &ss, NULL);
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
