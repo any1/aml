@@ -176,8 +176,11 @@ static void epoll_on_signal(void* obj)
 	read(ctx->fd, &fdsi, sizeof(fdsi));
 
 	struct aml_signal* sig = aml_try_ref(ctx->ref);
-	if (sig)
-		aml_emit(ctx->state->aml, sig, 0);
+	if (!sig)
+		return;
+
+	aml_emit(ctx->state->aml, sig, 0);
+	aml_unref(sig);
 }
 
 static int epoll_add_signal(void* state, struct aml_signal* sig)
