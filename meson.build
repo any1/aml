@@ -24,6 +24,7 @@ add_project_arguments(c_args, language: 'c')
 
 cc = meson.get_compiler('c')
 
+libepoll = dependency('epoll-shim', required: false)
 librt = cc.find_library('rt', required: true)
 threads = dependency('threads')
 
@@ -36,6 +37,7 @@ sources = [
 ]
 
 dependencies = [
+	libepoll,
 	librt,
 	threads,
 ]
