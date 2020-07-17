@@ -182,9 +182,9 @@ static int aml__mod_fd(struct aml* self, struct aml_handler* handler)
 	return self->backend.mod_fd(self->state, handler);
 }
 
-static int aml__set_timeout(struct aml* self, int timeout)
+static int aml__set_deadline(struct aml* self, uint64_t deadline)
 {
-	return self->backend.set_timeout(self->state, timeout);
+	return self->backend.set_deadline(self->state, deadline);
 }
 
 static void aml__post_dispatch(struct aml* self)
@@ -550,7 +550,7 @@ static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 
 	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);
 	if (earliest == timer)
-		aml__set_timeout(self, timer->timeout);
+		aml__set_deadline(self, timer->deadline);
 
 	return 0;
 }
@@ -767,7 +767,7 @@ void aml_dispatch(struct aml* self)
 	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);
 	if (earliest) {
 		assert(earliest->deadline > now);
-		aml__set_timeout(self, now - earliest->deadline);
+		aml__set_deadline(self, earliest->deadline);
 	}
 
 	sigset_t sig_old, sig_new;

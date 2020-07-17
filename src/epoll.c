@@ -241,19 +241,19 @@ static int epoll_del_signal(void* state, struct aml_signal* sig)
 	return rc;
 }
 
-static int epoll_set_timeout(void* state, int timeout)
+static int epoll_set_deadline(void* state, uint64_t deadline)
 {
 	struct epoll_state* self = state;
 
 	struct itimerspec it = {
 		.it_value = {
-			.tv_sec = (uint32_t)timeout / UINT32_C(1000),
-			.tv_nsec = ((uint32_t)timeout % UINT32_C(1000)) *
-				UINT32_C(1000000),
+			.tv_sec = (uint32_t)(deadline / UINT64_C(1000)),
+			.tv_nsec = (uint32_t)((deadline % UINT64_C(1000)) *
+				UINT64_C(1000000)),
 		},
 	};
 
-	return timerfd_settime(self->timer_fd, 0, &it, NULL);
+	return timerfd_settime(self->timer_fd, TFD_TIMER_ABSTIME, &it, NULL);
 }
 
 const struct aml_backend epoll_backend = {
@@ -266,5 +266,5 @@ const struct aml_backend epoll_backend = {
 	.del_fd = epoll_del_fd,
 	.add_signal = epoll_add_signal,
 	.del_signal = epoll_del_signal,
-	.set_timeout = epoll_set_timeout,
+	.set_deadline = epoll_set_deadline,
 };
