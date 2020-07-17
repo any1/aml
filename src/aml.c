@@ -143,6 +143,8 @@ static pthread_mutex_t aml__ref_mutex;
 
 extern struct aml_backend epoll_backend;
 
+static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self);
+
 EXPORT
 void aml_set_default(struct aml* aml)
 {
@@ -538,9 +540,17 @@ static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
 	pthread_mutex_unlock(&self->timer_list_mutex);
 
-	int next_timeout = aml_get_next_timeout(self, -1);
-	if (next_timeout >= 0)
-		aml__set_timeout(self, next_timeout);
+	if (timer->timeout == 0) {
+		assert(timer->obj.type != AML_OBJ_TICKER);
+		aml_stop(self, timer);
+		aml_emit(self, timer, 0);
+		aml_interrupt(self);
+		return 0;
+	}
+
+	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);
+	if (earliest == timer)
+		aml__set_timeout(self, timer->timeout);
 
 	return 0;
 }
@@ -678,35 +688,17 @@ static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 	return result;
 }
 
-int aml_get_next_timeout(struct aml* self, int timeout)
+static bool aml__handle_timeout(struct aml* self, uint64_t now)
 {
 	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
-	if (!timer)
-		return timeout;
-
-	uint64_t now = gettime_ms();
-	if (timer->deadline <= now)
-		return 0;
-
-	int timer_timeout = timer->deadline - now;
-
-	return timeout < 0 ? timer_timeout : MIN(timeout, timer_timeout);
-}
-
-static void aml__handle_timeout(struct aml* self)
-{
-	struct aml_timer* timer = aml__get_timer_with_earliest_deadline(self);
-
-	uint64_t now = gettime_ms();
-
 	if (!timer || timer->deadline > now)
-		return;
+		return false;
 
 	aml_emit(self, timer, 0);
 
 	switch (timer->obj.type) {
 	case AML_OBJ_TIMER:
-		aml__stop_timer(self, timer);
+		aml_stop(self, timer);
 		break;
 	case AML_OBJ_TICKER:
 		timer->deadline += timer->timeout;
@@ -715,6 +707,8 @@ static void aml__handle_timeout(struct aml* self)
 		abort();
 		break;
 	}
+
+	return true;
 }
 
 static void aml__handle_idle(struct aml* self)
@@ -767,11 +761,14 @@ static struct aml_obj* aml__event_dequeue(struct aml* self)
 EXPORT
 void aml_dispatch(struct aml* self)
 {
-	aml__handle_timeout(self);
+	uint64_t now = gettime_ms();
+	while (aml__handle_timeout(self, now));
 
-	int next_timeout = aml_get_next_timeout(self, -1);
-	if (next_timeout >= 0)
-		aml__set_timeout(self, next_timeout);
+	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);
+	if (earliest) {
+		assert(earliest->deadline > now);
+		aml__set_timeout(self, now - earliest->deadline);
+	}
 
 	sigset_t sig_old, sig_new;
 	sigfillset(&sig_new);
