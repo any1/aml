@@ -93,7 +93,7 @@ static void epoll_emit_event(struct epoll_state* self,
 	if (event->data.ptr == NULL) {
 		// Must be the timerfd
 		uint64_t count = 0;
-		read(self->timer_fd, &count, sizeof(count));
+		(void)read(self->timer_fd, &count, sizeof(count));
 		return;
 	}
 
@@ -173,7 +173,7 @@ static void epoll_on_signal(void* obj)
 	struct epoll_signal* ctx = aml_get_userdata(handler);
 
 	struct signalfd_siginfo fdsi;
-	read(ctx->fd, &fdsi, sizeof(fdsi));
+	(void)read(ctx->fd, &fdsi, sizeof(fdsi));
 
 	struct aml_signal* sig = aml_try_ref(ctx->ref);
 	if (!sig)
