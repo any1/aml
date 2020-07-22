@@ -42,7 +42,7 @@ dependencies = [
 	threads,
 ]
 
-aml = shared_library(
+aml = library(
 	'aml',
 	sources,
 	version: '0.0.0',
