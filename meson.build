@@ -77,7 +77,7 @@ install_headers('include/aml.h')
 
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(
-	libraries: aml,
+	aml,
 	version: meson.project_version(),
 	filebase: meson.project_name(),
 	name: meson.project_name(),
