@@ -36,6 +36,8 @@ enum aml_event {
 typedef void (*aml_callback_fn)(void* obj);
 typedef void (*aml_free_fn)(void*);
 
+extern const char aml_version[];
+
 /* Create a new main loop instance */
 struct aml* aml_new(void);
 

@@ -145,6 +145,14 @@ extern struct aml_backend epoll_backend;
 
 static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self);
 
+#if defined(GIT_VERSION)
+EXPORT const char aml_version[] = GIT_VERSION;
+#elif defined(PROJECT_VERSION)
+EXPORT const char aml_version[] = PROJECT_VERSION;
+#else
+EXPORT const char aml_version[] = "UNKNOWN";
+#endif
+
 EXPORT
 void aml_set_default(struct aml* aml)
 {
