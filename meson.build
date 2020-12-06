@@ -9,6 +9,8 @@ project(
 )
 
 buildtype = get_option('buildtype')
+default_library = get_option('default_library')
+is_static_subproject = meson.is_subproject() and default_library == 'static'
 
 c_args = [
 	'-DPROJECT_VERSION="@0@"'.format(meson.project_version()),
@@ -61,7 +63,7 @@ aml = library(
 	version: '0.0.0',
 	dependencies: dependencies,
 	include_directories: inc,
-	install: true,
+	install: not is_static_subproject,
 )
 
 aml_dep = declare_dependency(
@@ -73,13 +75,15 @@ if get_option('examples')
 	subdir('examples')
 endif
 
-install_headers('include/aml.h')
+if not is_static_subproject
+	install_headers('include/aml.h')
 
-pkgconfig = import('pkgconfig')
-pkgconfig.generate(
-	aml,
-	version: meson.project_version(),
-	filebase: meson.project_name(),
-	name: meson.project_name(),
-	description: 'Amother main loop library',
-)
+	pkgconfig = import('pkgconfig')
+	pkgconfig.generate(
+		aml,
+		version: meson.project_version(),
+		filebase: meson.project_name(),
+		name: meson.project_name(),
+		description: 'Another main loop library',
+	)
+endif
