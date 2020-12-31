@@ -1023,7 +1023,7 @@ void aml_set_event_mask(struct aml_handler* handler, enum aml_event mask)
 {
 	handler->event_mask = mask;
 
-	if (handler->parent)
+	if (handler->parent && aml_is_started(handler->parent, handler))
 		aml__mod_fd(handler->parent, handler);
 }
 
