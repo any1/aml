@@ -484,6 +484,15 @@ static bool aml__obj_is_started_unlocked(struct aml* self, void* obj)
 	return false;
 }
 
+EXPORT
+bool aml_is_started(struct aml* self, void* obj)
+{
+	pthread_mutex_lock(&self->obj_list_mutex);
+	bool result = aml__obj_is_started_unlocked(self, obj);
+	pthread_mutex_unlock(&self->obj_list_mutex);
+	return result;
+}
+
 static int aml__obj_try_add(struct aml* self, void* obj)
 {
 	int rc = -1;

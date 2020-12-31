@@ -17,6 +17,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <unistd.h>
 
 struct aml;
@@ -175,6 +176,12 @@ int aml_start(struct aml*, void* obj);
  * Returns: 0 on success, -1 if the handler is already stopped.
  */
 int aml_stop(struct aml*, void* obj);
+
+/* Check if an event handler is started.
+ *
+ * Returns: true if it has been started, false otherwise.
+ */
+bool aml_is_started(struct aml*, void* obj);
 
 /* Get the signal assigned to a signal handler.
  */
