@@ -178,6 +178,7 @@ static int kq_set_deadline(void* state, uint64_t deadline)
 const struct aml_backend implementation = {
 	.new_state = kq_new_state,
 	.del_state = kq_del_state,
+	.clock = CLOCK_REALTIME,
 	.get_fd = kq_get_fd,
 	.poll = kq_poll,
 	.add_fd = kq_add_fd,

@@ -206,10 +206,10 @@ static void aml__dont_block(int fd)
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
 
-static uint64_t gettime_ms(void)
+static uint64_t aml__gettime_ms(struct aml* self)
 {
 	struct timespec ts = { 0 };
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	clock_gettime(self->backend.clock, &ts);
 	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 }
 
@@ -551,7 +551,7 @@ static int aml__start_handler(struct aml* self, struct aml_handler* handler)
 
 static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 {
-	timer->deadline = gettime_ms() + timer->timeout;
+	timer->deadline = aml__gettime_ms(self) + timer->timeout;
 
 	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
@@ -778,7 +778,7 @@ static struct aml_obj* aml__event_dequeue(struct aml* self)
 EXPORT
 void aml_dispatch(struct aml* self)
 {
-	uint64_t now = gettime_ms();
+	uint64_t now = aml__gettime_ms(self);
 	while (aml__handle_timeout(self, now));
 
 	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);

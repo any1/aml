@@ -31,6 +31,7 @@ enum {
 
 struct aml_backend {
 	uint32_t flags;
+	uint32_t clock;
 	void* (*new_state)(struct aml*);
 	void (*del_state)(void* state);
 	int (*get_fd)(const void* state);

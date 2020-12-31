@@ -259,6 +259,7 @@ static int epoll_set_deadline(void* state, uint64_t deadline)
 const struct aml_backend implementation = {
 	.new_state = epoll_new_state,
 	.del_state = epoll_del_state,
+	.clock = CLOCK_MONOTONIC,
 	.get_fd = epoll_get_fd,
 	.poll = epoll_poll,
 	.add_fd = epoll_add_fd,
