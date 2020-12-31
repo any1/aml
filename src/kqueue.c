@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+#include <pthread.h>
+#include <signal.h>
 #include <assert.h>
 
 struct kq_state {
@@ -150,7 +152,14 @@ static int kq_add_signal(void* state, struct aml_signal* sig)
 	struct kevent event;
 	EV_SET(&event, signo, EVFILT_SIGNAL, EV_ADD, 0, 0, sig);
 
-	return kevent(self->fd, &event, 1, NULL, 0, NULL);
+	int rc = kevent(self->fd, &event, 1, NULL, 0, NULL);
+
+	sigset_t ss;
+	sigemptyset(&ss);
+	sigaddset(&ss, signo);
+	pthread_sigmask(SIG_BLOCK, &ss, NULL);
+
+	return rc;
 }
 
 static int kq_del_signal(void* state, struct aml_signal* sig)
@@ -160,6 +169,8 @@ static int kq_del_signal(void* state, struct aml_signal* sig)
 
 	struct kevent event;
 	EV_SET(&event, signo, EVFILT_SIGNAL, EV_DELETE, 0, 0, NULL);
+
+	// TODO: Restore signal mask
 
 	return kevent(self->fd, &event, 1, NULL, 0, NULL);
 }
