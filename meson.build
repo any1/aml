@@ -39,7 +39,6 @@ add_project_arguments(c_args, language: 'c')
 
 cc = meson.get_compiler('c')
 
-libepoll = dependency('epoll-shim', required: false)
 librt = cc.find_library('rt', required: true)
 threads = dependency('threads')
 
@@ -47,12 +46,16 @@ inc = include_directories('include')
 
 sources = [
 	'src/aml.c',
-	'src/epoll.c',
 	'src/thread-pool.c',
 ]
 
+if cc.has_header_symbol('sys/epoll.h', 'epoll_create')
+	sources += 'src/epoll.c'
+elif cc.has_header_symbol('sys/event.h', 'kqueue')
+	sources += 'src/kqueue.c'
+endif
+
 dependencies = [
-	libepoll,
 	librt,
 	threads,
 ]

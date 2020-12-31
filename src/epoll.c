@@ -256,7 +256,7 @@ static int epoll_set_deadline(void* state, uint64_t deadline)
 	return timerfd_settime(self->timer_fd, TFD_TIMER_ABSTIME, &it, NULL);
 }
 
-const struct aml_backend epoll_backend = {
+const struct aml_backend implementation = {
 	.new_state = epoll_new_state,
 	.del_state = epoll_del_state,
 	.get_fd = epoll_get_fd,

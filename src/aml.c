@@ -141,7 +141,7 @@ static struct aml_obj_list aml__obj_list = LIST_HEAD_INITIALIZER(aml__obj_list);
 // TODO: Properly initialise this?
 static pthread_mutex_t aml__ref_mutex;
 
-extern struct aml_backend epoll_backend;
+extern struct aml_backend implementation;
 
 static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self);
 
@@ -311,7 +311,7 @@ struct aml* aml_new(void)
 	pthread_mutex_init(&self->obj_list_mutex, NULL);
 	pthread_mutex_init(&self->timer_list_mutex, NULL);
 
-	memcpy(&self->backend, &epoll_backend, sizeof(self->backend));
+	memcpy(&self->backend, &implementation, sizeof(self->backend));
 
 	if (!self->backend.thread_pool_acquire)
 		self->backend.thread_pool_acquire = thread_pool_acquire_default;
