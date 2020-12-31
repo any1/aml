@@ -49,10 +49,17 @@ sources = [
 	'src/thread-pool.c',
 ]
 
-if cc.has_header_symbol('sys/epoll.h', 'epoll_create')
+have_epoll = cc.has_header_symbol('sys/epoll.h', 'epoll_create')
+have_kqueue = cc.has_header_symbol('sys/event.h', 'kqueue')
+
+if have_epoll
 	sources += 'src/epoll.c'
-elif cc.has_header_symbol('sys/event.h', 'kqueue')
+	message('epoll backend chosen')
+elif have_kqueue
 	sources += 'src/kqueue.c'
+	message('kqueue backend chosen')
+else
+	error('Unsupported system')
 endif
 
 dependencies = [
