@@ -1,0 +1,25 @@
+Source: libaml
+Priority: optional
+Maintainer: jauntywunderkind <jaunty@voodoowarez.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.0
+Section: libs
+Homepage: https://github.com/any1/aml
+Vcs-Browser: https://github.com/any1/aml
+Vcs-Git: https://github.com/any1/aml.git
+Rules-Requires-Root: no
+
+Package: libaml-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: libaml0 (= ${binary:Version}), ${misc:Depends}
+Description: Another Main Loop event loop library (development files)
+ A simple portable main loop library with a variety of capabilities.
+
+Package: libaml0
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Another Main Loop event loop library
+ A simple portable main loop library with a variety of capabilities.
