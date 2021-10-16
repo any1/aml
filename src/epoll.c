@@ -156,7 +156,7 @@ static int epoll_del_fd(void* state, struct aml_handler* handler)
 	struct epoll_state* self = state;
 	// Dummy event to appease valgrind
 	struct epoll_event event = { 0 };
-	return epoll_ctl(self->epoll_fd, EPOLL_CTL_MOD, aml_get_fd(handler),
+	return epoll_ctl(self->epoll_fd, EPOLL_CTL_DEL, aml_get_fd(handler),
 			&event);
 }
 
