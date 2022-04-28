@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Andri Yngvason
+ * Copyright (c) 2020 - 2022 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -29,7 +29,7 @@
 #include "sys/queue.h"
 
 struct default_work {
-	unsigned long long aml_id;
+	struct aml_weak_ref* aml_ref;
 	struct aml_work* work;
 
 	TAILQ_ENTRY(default_work) link;
@@ -108,7 +108,8 @@ static void* worker_fn(void* context)
 		if (cb)
 			cb(work->work);
 
-		struct aml* aml = aml_try_ref(work->aml_id);
+		struct aml* aml = work->aml_ref ?
+			aml_weak_ref_read(work->aml_ref) : NULL;
 		if (aml) {
 			aml_emit(aml, work->work, 0);
 			aml_stop(aml, work->work);
@@ -116,6 +117,7 @@ static void* worker_fn(void* context)
 			aml_unref(aml);
 		}
 
+		aml_weak_ref_del(work->aml_ref);
 		free(work);
 	}
 
@@ -171,11 +173,7 @@ static int enqueue_work(struct aml* aml, struct aml_work* work, int broadcast)
 		return -1;
 
 	default_work->work = work;
-
-	if (aml)
-		default_work->aml_id = aml_get_id(aml);
-	else
-		default_work->aml_id = ULLONG_MAX;
+	default_work->aml_ref = aml ? aml_weak_ref_new(aml) : NULL;
 
 	pthread_mutex_lock(&work_queue_mutex);
 	TAILQ_INSERT_TAIL(&default_work_queue, default_work, link);

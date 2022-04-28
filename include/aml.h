@@ -104,21 +104,22 @@ int aml_ref(void* obj);
  */
 int aml_unref(void* obj);
 
-/* Get global object id.
+/* Create a new weak reference to the object.
  *
- * This can be used to break reference loops.
- *
- * Returns an id that can be used to access the object using aml_try_ref().
+ * The reference object must be deleted using aml_weak_ref_del().
  */
-unsigned long long aml_get_id(const void* obj);
+struct aml_weak_ref* aml_weak_ref_new(void* obj);
 
-/* Try to reference an object with an id returned by aml_get_id().
- *
- * This increments the reference count by one.
- *
- * Returns the aml object if found. Otherwise NULL.
+/* Delete a weak reference created by aml_weak_ref_new().
  */
-void* aml_try_ref(unsigned long long id);
+void aml_weak_ref_del(struct aml_weak_ref* self);
+
+/* Try to get a new strong reference from a weak reference object.
+ *
+ * If the weak reference is still valid, the reference count on the returned
+ * aml object will be increased by one. Otherwise NULL is returned.
+ */
+void* aml_weak_ref_read(struct aml_weak_ref* self);
 
 /* The following calls create event handler objects.
  *

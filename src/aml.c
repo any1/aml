@@ -50,6 +50,13 @@ enum aml_obj_type {
 	AML_OBJ_IDLE,
 };
 
+struct aml_weak_ref {
+	void* obj;
+	LIST_ENTRY(aml_weak_ref) link;
+};
+
+LIST_HEAD(aml_weak_ref_list, aml_weak_ref);
+
 struct aml_obj {
 	enum aml_obj_type type;
 	int ref;
@@ -58,11 +65,11 @@ struct aml_obj {
 	aml_callback_fn cb;
 	unsigned long long id;
 	uint32_t n_events;
+	struct aml_weak_ref_list weak_refs;
 
 	void* backend_data;
 
 	LIST_ENTRY(aml_obj) link;
-	LIST_ENTRY(aml_obj) global_link;
 	TAILQ_ENTRY(aml_obj) event_link;
 };
 
@@ -135,9 +142,6 @@ struct aml {
 };
 
 static struct aml* aml__default = NULL;
-
-static unsigned long long aml__obj_id = 0;
-static struct aml_obj_list aml__obj_list = LIST_HEAD_INITIALIZER(aml__obj_list);
 
 // TODO: Properly initialise this?
 static pthread_mutex_t aml__ref_mutex;
@@ -226,12 +230,45 @@ static void aml__ref_unlock(void)
 	pthread_mutex_unlock(&aml__ref_mutex);
 }
 
-static void aml__obj_global_ref(struct aml_obj* obj)
+EXPORT
+struct aml_weak_ref* aml_weak_ref_new(void* obj_ptr)
+{
+	struct aml_obj* obj = obj_ptr;
+
+	struct aml_weak_ref* self = calloc(1, sizeof(*self));
+	if (!self)
+		return NULL;
+
+	self->obj = obj;
+	aml__ref_lock();
+	LIST_INSERT_HEAD(&obj->weak_refs, self, link);
+	aml__ref_unlock();
+
+	return self;
+}
+
+EXPORT
+void aml_weak_ref_del(struct aml_weak_ref* self)
+{
+	if (!self)
+		return;
+
+	aml__ref_lock();
+	if (self->obj)
+		LIST_REMOVE(self, link);
+	aml__ref_unlock();
+	free(self);
+}
+
+EXPORT
+void* aml_weak_ref_read(struct aml_weak_ref* self)
 {
 	aml__ref_lock();
-	obj->id = aml__obj_id++;
-	LIST_INSERT_HEAD(&aml__obj_list, obj, global_link);
+	struct aml_obj* obj = self->obj;
+	if (obj)
+		obj->ref++;
 	aml__ref_unlock();
+	return obj;
 }
 
 static void on_self_pipe_read(void* obj) {
@@ -304,6 +341,7 @@ struct aml* aml_new(void)
 
 	self->obj.type = AML_OBJ_AML;
 	self->obj.ref = 1;
+	LIST_INIT(&self->obj.weak_refs);
 
 	LIST_INIT(&self->obj_list);
 	LIST_INIT(&self->timer_list);
@@ -329,8 +367,6 @@ struct aml* aml_new(void)
 
 	if (aml__init_self_pipe(self) < 0)
 		goto pipe_failure;
-
-	aml__obj_global_ref(&self->obj);
 
 	return self;
 
@@ -376,11 +412,10 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
 	self->obj.cb = callback;
+	LIST_INIT(&self->obj.weak_refs);
 
 	self->fd = fd;
 	self->event_mask = EVENT_MASK_DEFAULT;
-
-	aml__obj_global_ref(&self->obj);
 
 	return self;
 }
@@ -398,10 +433,9 @@ struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn callback,
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
 	self->obj.cb = callback;
+	LIST_INIT(&self->obj.weak_refs);
 
 	self->timeout = timeout;
-
-	aml__obj_global_ref(&self->obj);
 
 	return self;
 }
@@ -429,10 +463,9 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
 	self->obj.cb = callback;
+	LIST_INIT(&self->obj.weak_refs);
 
 	self->signo = signo;
-
-	aml__obj_global_ref(&self->obj);
 
 	return self;
 }
@@ -450,10 +483,9 @@ struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
 	self->obj.cb = callback;
+	LIST_INIT(&self->obj.weak_refs);
 
 	self->work_fn = work_fn;
-
-	aml__obj_global_ref(&self->obj);
 
 	return self;
 }
@@ -471,8 +503,7 @@ struct aml_idle* aml_idle_new(aml_callback_fn callback, void* userdata,
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
 	self->obj.cb = callback;
-
-	aml__obj_global_ref(&self->obj);
+	LIST_INIT(&self->obj.weak_refs);
 
 	return self;
 }
@@ -837,6 +868,7 @@ int aml_ref(void* obj)
 	struct aml_obj* self = obj;
 
 	aml__ref_lock();
+	assert(self->ref >= 0);
 	int ref = self->ref++;
 	aml__ref_unlock();
 
@@ -917,12 +949,19 @@ int aml_unref(void* obj)
 
 	aml__ref_lock();
 	int ref = --self->ref;
-	if (ref == 0)
-		LIST_REMOVE(self, global_link);
 	aml__ref_unlock();
+
 	assert(ref >= 0);
 	if (ref > 0)
 		goto done;
+
+	aml__ref_lock();
+	while (!LIST_EMPTY(&self->weak_refs)) {
+		struct aml_weak_ref* ref = LIST_FIRST(&self->weak_refs);
+		ref->obj = NULL;
+		LIST_REMOVE(ref, link);
+	}
+	aml__ref_unlock();
 
 	switch (self->type) {
 	case AML_OBJ_AML:
@@ -952,32 +991,6 @@ int aml_unref(void* obj)
 
 done:
 	return ref;
-}
-
-EXPORT
-unsigned long long aml_get_id(const void* obj)
-{
-	const struct aml_obj* aml_obj = obj;
-	return aml_obj->id;
-}
-
-EXPORT
-void* aml_try_ref(unsigned long long id)
-{
-	struct aml_obj* obj = NULL;
-
-	aml__ref_lock();
-	LIST_FOREACH(obj, &aml__obj_list, global_link)
-		if (obj->id == id)
-			break;
-
-	if (obj && obj->id == id)
-		obj->ref++;
-	else
-		obj = NULL;
-
-	aml__ref_unlock();
-	return obj;
 }
 
 EXPORT

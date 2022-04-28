@@ -37,7 +37,7 @@ struct epoll_state {
 struct epoll_signal {
 	struct epoll_state* state;
 	int fd;
-	int ref;
+	struct aml_weak_ref* ref;
 };
 
 static void* epoll_new_state(struct aml* aml)
@@ -168,6 +168,7 @@ static void epoll_signal_cleanup(void* userdata)
 {
 	struct epoll_signal* sig = userdata;
 	close(sig->fd);
+	aml_weak_ref_del(sig->ref);
 	free(sig);
 }
 
@@ -179,7 +180,7 @@ static void epoll_on_signal(void* obj)
 	struct signalfd_siginfo fdsi;
 	(void)read(ctx->fd, &fdsi, sizeof(fdsi));
 
-	struct aml_signal* sig = aml_try_ref(ctx->ref);
+	struct aml_signal* sig = aml_weak_ref_read(ctx->ref);
 	if (!sig)
 		return;
 
@@ -202,7 +203,7 @@ static int epoll_add_signal(void* state, struct aml_signal* sig)
 	sigaddset(&ss, signo);
 
 	ctx->state = self;
-	ctx->ref = aml_get_id(sig);
+	ctx->ref = aml_weak_ref_new(sig);
 
 	ctx->fd = signalfd(-1, &ss, SFD_NONBLOCK | SFD_CLOEXEC);
 	if (ctx->fd < 0)
