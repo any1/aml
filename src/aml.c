@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Andri Yngvason
+ * Copyright (c) 2020 - 2022 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -57,6 +57,7 @@ struct aml_obj {
 	aml_free_fn free_fn;
 	aml_callback_fn cb;
 	unsigned long long id;
+	uint32_t n_events;
 
 	void* backend_data;
 
@@ -769,7 +770,7 @@ static struct aml_obj* aml__event_dequeue(struct aml* self)
 {
 	pthread_mutex_lock(&self->event_queue_mutex);
 	struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
-	if (obj)
+	if (obj && --obj->n_events == 0)
 		TAILQ_REMOVE(&self->event_queue, obj, event_link);
 	pthread_mutex_unlock(&self->event_queue_mutex);
 	return obj;
@@ -1006,7 +1007,8 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 
 	pthread_sigmask(SIG_BLOCK, &sig_new, &sig_old);
 	pthread_mutex_lock(&self->event_queue_mutex);
-	TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
+	if (obj->n_events++ == 0)
+		TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
 	aml_ref(obj);
 	pthread_mutex_unlock(&self->event_queue_mutex);
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
