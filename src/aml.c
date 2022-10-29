@@ -154,6 +154,8 @@ EXPORT const char aml_version[] = PROJECT_VERSION;
 EXPORT const char aml_version[] = "UNKNOWN";
 #endif
 
+EXPORT const int aml_unstable_abi_version = AML_UNSTABLE_API;
+
 EXPORT
 void aml_set_default(struct aml* aml)
 {
