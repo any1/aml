@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Andri Yngvason
+ * Copyright (c) 2020 - 2022 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -98,10 +98,12 @@ static void epoll_emit_event(struct epoll_state* self,
 	}
 
 	enum aml_event aml_events = AML_EVENT_NONE;
-	if (event->events & (EPOLLIN | EPOLLPRI))
+	if (event->events & EPOLLIN)
 		aml_events |= AML_EVENT_READ;
 	if (event->events & EPOLLOUT)
 		aml_events |= AML_EVENT_WRITE;
+	if (event->events & EPOLLPRI)
+		aml_events |= AML_EVENT_OOB;
 
 	aml_emit(self->aml, event->data.ptr, aml_events);
 }
@@ -126,9 +128,11 @@ static void epoll_event_from_aml_handler(struct epoll_event* event,
 
 	event->events = 0;
 	if (in & AML_EVENT_READ)
-		event->events |= EPOLLIN | EPOLLPRI;
+		event->events |= EPOLLIN;
 	if (in & AML_EVENT_WRITE)
 		event->events |= EPOLLOUT;
+	if (in & AML_EVENT_OOB)
+		event->events |= EPOLLPRI;
 
 	event->data.ptr = handler;
 }

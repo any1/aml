@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Andri Yngvason
+ * Copyright (c) 2020 - 2022 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -32,6 +32,7 @@ enum aml_event {
 	AML_EVENT_NONE = 0,
 	AML_EVENT_READ = 1 << 0,
 	AML_EVENT_WRITE = 1 << 1,
+	AML_EVENT_OOB = 1 << 2,
 };
 
 typedef void (*aml_callback_fn)(void* obj);
