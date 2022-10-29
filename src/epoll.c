@@ -251,9 +251,9 @@ static int epoll_set_deadline(void* state, uint64_t deadline)
 
 	struct itimerspec it = {
 		.it_value = {
-			.tv_sec = (uint32_t)(deadline / UINT64_C(1000)),
-			.tv_nsec = (uint32_t)((deadline % UINT64_C(1000)) *
-				UINT64_C(1000000)),
+			.tv_sec = (uint32_t)(deadline / UINT64_C(1000000)),
+			.tv_nsec = (uint32_t)((deadline % UINT64_C(1000000)) *
+				UINT64_C(1000)),
 		},
 	};
 

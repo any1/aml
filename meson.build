@@ -17,6 +17,7 @@ c_args = [
 	'-D_POSIX_C_SOURCE=200809L',
 	'-fvisibility=hidden',
 	'-Wmissing-prototypes',
+	'-DAML_UNSTABLE_API=1',
 ]
 
 git = find_program('git', native: true, required: false)

@@ -43,7 +43,7 @@ int main()
 	aml_start(aml, sig);
 	aml_unref(sig);
 
-	struct aml_ticker* ticker = aml_ticker_new(1000, on_tick, &count, NULL);
+	struct aml_ticker* ticker = aml_ticker_new(1000000, on_tick, &count, NULL);
 	if (!ticker)
 		goto failure;
 

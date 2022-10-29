@@ -181,7 +181,7 @@ static int kq_set_deadline(void* state, uint64_t deadline)
 
 	struct kevent event;
 	EV_SET(&event, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT,
-			NOTE_MSECONDS | NOTE_ABSTIME, deadline, NULL);
+			NOTE_USECONDS | NOTE_ABSTIME, deadline, NULL);
 
 	return kevent(self->fd, &event, 1, NULL, 0, NULL);
 }

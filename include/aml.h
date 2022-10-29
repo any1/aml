@@ -16,6 +16,17 @@
 
 #pragma once
 
+#ifndef AML_UNSTABLE_API
+#define AML_UNSTABLE_API 0
+#endif
+
+/* Something like this is necessary when changes are made that don't break the
+ * build but will cause nasty bugs if ignored.
+ */
+#if AML_UNSTABLE_API != 1
+#error "API has changed! Please, observe the changes and acknowledge by defining AML_UNSTABLE_API as 1 before including aml.h"
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -57,12 +68,12 @@ struct aml* aml_get_default(void);
 /* Check if there are pending events. The user should call aml_dispatch()
  * afterwards if there are any pending events.
  *
- * This function behaves like poll(): it will wait for either a timeout (in ms)
- * or a signal.
+ * This function behaves like poll(): it will wait for either a timeout (in µs)
+ * or a signal. Will block indefinitely if timeout is -1.
  *
  * Returns: -1 on timeout or signal; otherwise number of pending events.
  */
-int aml_poll(struct aml*, int timeout);
+int aml_poll(struct aml*, int64_t timeout);
 
 /* This is a convenience function that calls aml_poll() and aml_dispatch() in
  * a loop until aml_exit() is called.
@@ -116,10 +127,10 @@ void* aml_try_ref(unsigned long long id);
 struct aml_handler* aml_handler_new(int fd, aml_callback_fn, void* userdata,
                                     aml_free_fn);
 
-struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn,
+struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn,
                                 void* userdata, aml_free_fn);
 
-struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn,
+struct aml_ticker* aml_ticker_new(uint64_t period, aml_callback_fn,
                                   void* userdata, aml_free_fn);
 
 struct aml_signal* aml_signal_new(int signo, aml_callback_fn,
@@ -156,11 +167,11 @@ enum aml_event aml_get_event_mask(const struct aml_handler* obj);
  */
 enum aml_event aml_get_revents(const struct aml_handler* obj);
 
-/* Set timeout/period of a timer/ticker
+/* Set timeout/period of a timer/ticker in µs
  *
  * Calling this on a started timer/ticker yields undefined behaviour
  */
-void aml_set_duration(void* obj, uint32_t value);
+void aml_set_duration(void* obj, uint64_t value);
 
 /* Start an event handler.
  *

@@ -82,7 +82,7 @@ struct aml_handler {
 struct aml_timer {
 	struct aml_obj obj;
 
-	uint32_t timeout;
+	uint64_t timeout;
 	uint64_t deadline;
 
 	LIST_ENTRY(aml_timer) link;
@@ -207,11 +207,11 @@ static void aml__dont_block(int fd)
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
 
-static uint64_t aml__gettime_ms(struct aml* self)
+static uint64_t aml__gettime_us(struct aml* self)
 {
 	struct timespec ts = { 0 };
 	clock_gettime(self->backend.clock, &ts);
-	return ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+	return ts.tv_sec * UINT64_C(1000000) + ts.tv_nsec / UINT64_C(1000);
 }
 
 static void aml__ref_lock(void)
@@ -384,7 +384,7 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 }
 
 EXPORT
-struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
+struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn callback,
                                 void* userdata, aml_free_fn free_fn)
 {
 	struct aml_timer* self = calloc(1, sizeof(*self));
@@ -405,7 +405,7 @@ struct aml_timer* aml_timer_new(uint32_t timeout, aml_callback_fn callback,
 }
 
 EXPORT
-struct aml_ticker* aml_ticker_new(uint32_t period, aml_callback_fn callback,
+struct aml_ticker* aml_ticker_new(uint64_t period, aml_callback_fn callback,
                                   void* userdata, aml_free_fn free_fn)
 {
 	struct aml_timer* timer =
@@ -552,7 +552,7 @@ static int aml__start_handler(struct aml* self, struct aml_handler* handler)
 
 static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 {
-	timer->deadline = aml__gettime_ms(self) + timer->timeout;
+	timer->deadline = aml__gettime_us(self) + timer->timeout;
 
 	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
@@ -761,9 +761,11 @@ static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 
 /* Might exit earlier than timeout. It's up to the user to check */
 EXPORT
-int aml_poll(struct aml* self, int timeout)
+int aml_poll(struct aml* self, int64_t timeout_us)
 {
-	return aml__poll(self, timeout);
+	int timeout_ms = (timeout_us == INT64_C(-1))
+		? -1 : timeout_us / INT64_C(1000);
+	return aml__poll(self, timeout_ms);
 }
 
 static struct aml_obj* aml__event_dequeue(struct aml* self)
@@ -779,7 +781,7 @@ static struct aml_obj* aml__event_dequeue(struct aml* self)
 EXPORT
 void aml_dispatch(struct aml* self)
 {
-	uint64_t now = aml__gettime_ms(self);
+	uint64_t now = aml__gettime_us(self);
 	while (aml__handle_timeout(self, now));
 
 	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);
@@ -1083,7 +1085,7 @@ void* aml_get_backend_state(const struct aml* self)
 }
 
 EXPORT
-void aml_set_duration(void* ptr, uint32_t duration)
+void aml_set_duration(void* ptr, uint64_t duration)
 {
 	struct aml_obj* obj = ptr;
 
