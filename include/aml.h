@@ -187,6 +187,10 @@ int aml_start(struct aml*, void* obj);
  *
  * This decreases the reference count on a handler object.
  *
+ * The callback or done function will not be run after this is called. However,
+ * for aml_work, the work function may already be executing and it will be
+ * allowed to complete.
+ *
  * Returns: 0 on success, -1 if the handler is already stopped.
  */
 int aml_stop(struct aml*, void* obj);
