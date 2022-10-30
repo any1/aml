@@ -112,7 +112,6 @@ static void* worker_fn(void* context)
 			aml_weak_ref_read(work->aml_ref) : NULL;
 		if (aml) {
 			aml_emit(aml, work->work, 0);
-			aml_stop(aml, work->work);
 			aml_interrupt(aml);
 			aml_unref(aml);
 		}

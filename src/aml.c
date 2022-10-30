@@ -508,6 +508,18 @@ struct aml_idle* aml_idle_new(aml_callback_fn callback, void* userdata,
 	return self;
 }
 
+static bool aml__obj_is_single_shot(void* ptr)
+{
+	struct aml_obj* obj = ptr;
+	switch (obj->type) {
+	case AML_OBJ_TIMER: /* fallthrough */
+	case AML_OBJ_WORK:
+		return true;
+	default:;
+	}
+	return false;
+}
+
 static bool aml__obj_is_started_unlocked(struct aml* self, void* obj)
 {
 	struct aml_obj* elem;
@@ -593,7 +605,6 @@ static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 
 	if (timer->timeout == 0) {
 		assert(timer->obj.type != AML_OBJ_TICKER);
-		aml_stop(self, timer);
 		aml_emit(self, timer, 0);
 		aml_interrupt(self);
 		return 0;
@@ -679,7 +690,6 @@ static int aml__stop_signal(struct aml* self, struct aml_signal* sig)
 
 static int aml__stop_work(struct aml* self, struct aml_work* work)
 {
-	/* Note: The cb may be executed anyhow */
 	return 0;
 }
 
@@ -749,7 +759,6 @@ static bool aml__handle_timeout(struct aml* self, uint64_t now)
 
 	switch (timer->obj.type) {
 	case AML_OBJ_TIMER:
-		aml_stop(self, timer);
 		break;
 	case AML_OBJ_TICKER:
 		timer->deadline += timer->timeout;
@@ -767,7 +776,7 @@ static void aml__handle_idle(struct aml* self)
 	struct aml_idle* idle;
 
 	LIST_FOREACH(idle, &self->idle_list, link)
-		if (idle->obj.cb)
+		if (idle->obj.cb && aml_is_started(self, idle))
 			idle->obj.cb(idle);
 }
 
@@ -778,8 +787,15 @@ static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 	 */
 	aml_ref(obj);
 
-	if (obj->cb)
+	if (obj->cb && aml_is_started(self, obj)) {
+		/* Single-shot objects must be stopped before the callback so
+		 * that they can be restarted from within the callback.
+		 */
+		if (aml__obj_is_single_shot(obj))
+			aml_stop(self, obj);
+
 		obj->cb(obj);
+	}
 
 	if (obj->type == AML_OBJ_HANDLER) {
 		struct aml_handler* handler = (struct aml_handler*)obj;
