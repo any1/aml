@@ -774,8 +774,9 @@ static bool aml__handle_timeout(struct aml* self, uint64_t now)
 static void aml__handle_idle(struct aml* self)
 {
 	struct aml_idle* idle;
+	struct aml_idle* tmp;
 
-	LIST_FOREACH(idle, &self->idle_list, link)
+	LIST_FOREACH_SAFE(idle, &self->idle_list, link, tmp)
 		if (idle->obj.cb && aml_is_started(self, idle))
 			idle->obj.cb(idle);
 }
