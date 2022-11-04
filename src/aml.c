@@ -91,6 +91,7 @@ struct aml_timer {
 
 	uint64_t timeout;
 	uint64_t deadline;
+	bool expired;
 
 	LIST_ENTRY(aml_timer) link;
 };
@@ -598,6 +599,7 @@ static int aml__start_handler(struct aml* self, struct aml_handler* handler)
 static int aml__start_timer(struct aml* self, struct aml_timer* timer)
 {
 	timer->deadline = aml__gettime_us(self) + timer->timeout;
+	timer->expired = false;
 
 	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_INSERT_HEAD(&self->timer_list, timer, link);
@@ -740,7 +742,7 @@ static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 
 	pthread_mutex_lock(&self->timer_list_mutex);
 	LIST_FOREACH(timer, &self->timer_list, link)
-		if (timer->deadline < deadline) {
+		if (!timer->expired && timer->deadline < deadline) {
 			deadline = timer->deadline;
 			result = timer;
 		}
@@ -759,6 +761,7 @@ static bool aml__handle_timeout(struct aml* self, uint64_t now)
 
 	switch (timer->obj.type) {
 	case AML_OBJ_TIMER:
+		timer->expired = true;
 		break;
 	case AML_OBJ_TICKER:
 		timer->deadline += timer->timeout;
