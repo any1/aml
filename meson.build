@@ -5,6 +5,7 @@ project(
 	license: 'ISC',
 	default_options: [
 		'c_std=c11',
+		'warning_level=2',
 	]
 )
 
@@ -16,8 +17,10 @@ c_args = [
 	'-DPROJECT_VERSION="@0@"'.format(meson.project_version()),
 	'-D_POSIX_C_SOURCE=200809L',
 	'-fvisibility=hidden',
-	'-Wmissing-prototypes',
 	'-DAML_UNSTABLE_API=1',
+
+	'-Wmissing-prototypes',
+	'-Wno-unused-parameter',
 ]
 
 git = find_program('git', native: true, required: false)
