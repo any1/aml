@@ -66,6 +66,8 @@ static void reap_threads(void)
 	while (!TAILQ_EMPTY(&default_work_queue)) {
 		struct default_work* work = TAILQ_FIRST(&default_work_queue);
 		TAILQ_REMOVE(&default_work_queue, work, link);
+		if (work->work)
+			aml_unref(work->work);
 		free(work);
 	}
 }
@@ -117,6 +119,7 @@ static void* worker_fn(void* context)
 		}
 
 		aml_weak_ref_del(work->aml_ref);
+		aml_unref(work->work);
 		free(work);
 	}
 
@@ -170,6 +173,9 @@ static int enqueue_work(struct aml* aml, struct aml_work* work, int broadcast)
 	struct default_work* default_work = calloc(1, sizeof(*default_work));
 	if (!default_work)
 		return -1;
+
+	if (work)
+		aml_ref(work);
 
 	default_work->work = work;
 	default_work->aml_ref = aml ? aml_weak_ref_new(aml) : NULL;
