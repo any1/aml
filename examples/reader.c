@@ -19,7 +19,7 @@
 #include <aml.h>
 #include <signal.h>
 
-static void on_line(void* handler)
+static void on_line(struct aml_handler* handler)
 {
 	char line[256];
 	fscanf(stdin, "%s", line);
@@ -30,7 +30,7 @@ static void on_line(void* handler)
 		aml_exit(aml_get_default());
 }
 
-static void on_sigint(void* sig)
+static void on_sigint(struct aml_signal* sig)
 {
 	aml_exit(aml_get_default());
 }

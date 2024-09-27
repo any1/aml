@@ -172,9 +172,8 @@ static void epoll_signal_cleanup(void* userdata)
 	free(sig);
 }
 
-static void epoll_on_signal(void* obj)
+static void epoll_on_signal(struct aml_handler* handler)
 {
-	struct aml_handler* handler = obj;
 	struct epoll_signal* ctx = aml_get_userdata(handler);
 
 	struct signalfd_siginfo fdsi;

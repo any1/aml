@@ -132,7 +132,6 @@ enum aml_event {
 	AML_EVENT_OOB = 1 << 2,
 };
 
-typedef void (*aml_callback_fn)(void* obj);
 typedef void (*aml_free_fn)(void*);
 
 extern const char aml_version[];
@@ -207,23 +206,23 @@ int aml_idle_unref(struct aml_idle* obj);
  * An object will have a reference count of 1 upon creation and must be freed
  * using aml_unref().
  */
-struct aml_handler* aml_handler_new(int fd, aml_callback_fn, void* userdata,
-                                    aml_free_fn);
+struct aml_handler* aml_handler_new(int fd, void (*cb)(struct aml_handler*),
+		void* userdata, aml_free_fn);
 
-struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn,
-                                void* userdata, aml_free_fn);
+struct aml_timer* aml_timer_new(uint64_t timeout, void (*cb)(struct aml_timer*),
+		void* userdata, aml_free_fn);
 
-struct aml_ticker* aml_ticker_new(uint64_t period, aml_callback_fn,
-                                  void* userdata, aml_free_fn);
+struct aml_ticker* aml_ticker_new(uint64_t period, void (*cb)(struct aml_ticker*),
+		void* userdata, aml_free_fn);
 
-struct aml_signal* aml_signal_new(int signo, aml_callback_fn,
-                                  void* userdata, aml_free_fn);
+struct aml_signal* aml_signal_new(int signo, void (*cb)(struct aml_signal*),
+		void* userdata, aml_free_fn);
 
-struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn done_fn,
-                              void* userdata, aml_free_fn);
+struct aml_work* aml_work_new(void (*work_fn)(struct aml_work*),
+		void (*done_fn)(struct aml_work*), void* userdata, aml_free_fn);
 
-struct aml_idle* aml_idle_new(aml_callback_fn done_fn, void* userdata,
-                              aml_free_fn);
+struct aml_idle* aml_idle_new(void (*cb)(struct aml_idle*), void* userdata,
+		aml_free_fn);
 
 /* Get the file descriptor associated with either a handler or the main loop.
  *
