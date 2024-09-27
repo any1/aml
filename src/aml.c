@@ -375,8 +375,7 @@ X(aml_idle, idle)
 
 #undef X
 
-static void on_self_pipe_read(void* obj) {
-	struct aml_handler *handler = obj;
+static void on_self_pipe_read(struct aml_handler* handler) {
 	struct aml* self = aml_get_userdata(handler);
 	assert(self);
 	assert(self->self_pipe_rfd == aml_get_fd(handler));
@@ -505,8 +504,9 @@ int aml_require_workers(struct aml* self, int n)
 }
 
 EXPORT
-struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
-                                    void* userdata, aml_free_fn free_fn)
+struct aml_handler* aml_handler_new(int fd,
+		void (*callback)(struct aml_handler*), void* userdata,
+		aml_free_fn free_fn)
 {
 	struct aml_handler* self = calloc(1, sizeof(*self));
 	if (!self)
@@ -516,7 +516,7 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
-	self->obj.cb = callback;
+	self->obj.cb = (void*)callback;
 	LIST_INIT(&self->obj.weak_refs);
 
 	self->fd = fd;
@@ -526,8 +526,9 @@ struct aml_handler* aml_handler_new(int fd, aml_callback_fn callback,
 }
 
 EXPORT
-struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn callback,
-                                void* userdata, aml_free_fn free_fn)
+struct aml_timer* aml_timer_new(uint64_t timeout,
+		void (*callback)(struct aml_timer*), void* userdata,
+		aml_free_fn free_fn)
 {
 	struct aml_timer* self = calloc(1, sizeof(*self));
 	if (!self)
@@ -537,7 +538,7 @@ struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn callback,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
-	self->obj.cb = callback;
+	self->obj.cb = (void*)callback;
 	LIST_INIT(&self->obj.weak_refs);
 
 	self->timeout = timeout;
@@ -546,18 +547,20 @@ struct aml_timer* aml_timer_new(uint64_t timeout, aml_callback_fn callback,
 }
 
 EXPORT
-struct aml_ticker* aml_ticker_new(uint64_t period, aml_callback_fn callback,
-                                  void* userdata, aml_free_fn free_fn)
+struct aml_ticker* aml_ticker_new(uint64_t period,
+		void (*callback)(struct aml_ticker*),
+		void* userdata, aml_free_fn free_fn)
 {
 	struct aml_timer* timer =
-		aml_timer_new(period, callback, userdata, free_fn);
+		aml_timer_new(period, (void*)callback, userdata, free_fn);
 	timer->obj.type = AML_OBJ_TICKER;
 	return (struct aml_ticker*)timer;
 }
 
 EXPORT
-struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
-                                  void* userdata, aml_free_fn free_fn)
+struct aml_signal* aml_signal_new(int signo,
+		void (*callback)(struct aml_signal*), void* userdata,
+		aml_free_fn free_fn)
 {
 	struct aml_signal* self = calloc(1, sizeof(*self));
 	if (!self)
@@ -567,7 +570,7 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
-	self->obj.cb = callback;
+	self->obj.cb = (void*)callback;
 	LIST_INIT(&self->obj.weak_refs);
 
 	self->signo = signo;
@@ -576,8 +579,9 @@ struct aml_signal* aml_signal_new(int signo, aml_callback_fn callback,
 }
 
 EXPORT
-struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
-                              void* userdata, aml_free_fn free_fn)
+struct aml_work* aml_work_new(void (*work_fn)(struct aml_work*),
+		void (*callback)(struct aml_work*), void* userdata,
+		aml_free_fn free_fn)
 {
 	struct aml_work* self = calloc(1, sizeof(*self));
 	if (!self)
@@ -587,17 +591,17 @@ struct aml_work* aml_work_new(aml_callback_fn work_fn, aml_callback_fn callback,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
-	self->obj.cb = callback;
+	self->obj.cb = (void*)callback;
 	LIST_INIT(&self->obj.weak_refs);
 
-	self->work_fn = work_fn;
+	self->work_fn = (void*)work_fn;
 
 	return self;
 }
 
 EXPORT
-struct aml_idle* aml_idle_new(aml_callback_fn callback, void* userdata,
-                              aml_free_fn free_fn)
+struct aml_idle* aml_idle_new(void (*callback)(struct aml_idle*),
+		void* userdata, aml_free_fn free_fn)
 {
 	struct aml_idle* self = calloc(1, sizeof(*self));
 	if (!self)
@@ -607,7 +611,7 @@ struct aml_idle* aml_idle_new(aml_callback_fn callback, void* userdata,
 	self->obj.ref = 1;
 	self->obj.userdata = userdata;
 	self->obj.free_fn = free_fn;
-	self->obj.cb = callback;
+	self->obj.cb = (void*)callback;
 	LIST_INIT(&self->obj.weak_refs);
 
 	return self;
