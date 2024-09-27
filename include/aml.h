@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 - 2022 Andri Yngvason
+ * Copyright (c) 2020 - 2024 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -30,6 +30,92 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#define aml_ref(obj) _Generic((obj), \
+		struct aml*: aml_loop_ref, \
+		struct aml_handler*: aml_handler_ref, \
+		struct aml_timer*: aml_timer_ref, \
+		struct aml_ticker*: aml_ticker_ref, \
+		struct aml_signal*: aml_signal_ref, \
+		struct aml_work*: aml_work_ref, \
+		struct aml_idle*: aml_idle_ref \
+		)(obj)
+
+#define aml_unref(obj) _Generic((obj), \
+		struct aml*: aml_loop_unref, \
+		struct aml_handler*: aml_handler_unref, \
+		struct aml_timer*: aml_timer_unref, \
+		struct aml_ticker*: aml_ticker_unref, \
+		struct aml_signal*: aml_signal_unref, \
+		struct aml_work*: aml_work_unref, \
+		struct aml_idle*: aml_idle_unref \
+		)(obj)
+
+#define aml_set_userdata(aml, obj) _Generic((obj), \
+		struct aml*: aml_loop_set_userdata, \
+		struct aml_handler*: aml_handler_set_userdata, \
+		struct aml_timer*: aml_timer_set_userdata, \
+		struct aml_ticker*: aml_ticker_set_userdata, \
+		struct aml_signal*: aml_signal_set_userdata, \
+		struct aml_work*: aml_work_set_userdata, \
+		struct aml_idle*: aml_idle_set_userdata \
+		)(aml, obj)
+
+#define aml_get_userdata(obj) _Generic((obj), \
+		struct aml*: aml_loop_get_userdata, \
+		const struct aml*: aml_loop_get_userdata, \
+		struct aml_handler*: aml_handler_get_userdata, \
+		const struct aml_handler*: aml_handler_get_userdata, \
+		struct aml_timer*: aml_timer_get_userdata, \
+		const struct aml_timer*: aml_timer_get_userdata, \
+		struct aml_ticker*: aml_ticker_get_userdata, \
+		const struct aml_ticker*: aml_ticker_get_userdata, \
+		struct aml_signal*: aml_signal_get_userdata, \
+		const struct aml_signal*: aml_signal_get_userdata, \
+		struct aml_work*: aml_work_get_userdata, \
+		const struct aml_work*: aml_work_get_userdata, \
+		struct aml_idle*: aml_idle_get_userdata, \
+		const struct aml_idle*: aml_idle_get_userdata \
+		)(obj)
+
+#define aml_get_fd(obj) _Generic((obj), \
+		struct aml*: aml_loop_get_fd, \
+		const struct aml*: aml_loop_get_fd, \
+		struct aml_handler*: aml_handler_get_fd, \
+		const struct aml_handler*: aml_handler_get_fd \
+		)(obj)
+
+#define aml_set_duration(obj, duration) _Generic((obj), \
+		struct aml_timer*: aml_timer_set_duration, \
+		struct aml_ticker*: aml_ticker_set_duration \
+		)(obj, duration)
+
+#define aml_start(aml, obj) _Generic((obj), \
+		struct aml_handler*: aml_start_handler, \
+		struct aml_timer*: aml_start_timer, \
+		struct aml_ticker*: aml_start_ticker, \
+		struct aml_signal*: aml_start_signal, \
+		struct aml_work*: aml_start_work, \
+		struct aml_idle*: aml_start_idle \
+		)(aml, obj)
+
+#define aml_stop(aml, obj) _Generic((obj), \
+		struct aml_handler*: aml_stop_handler, \
+		struct aml_timer*: aml_stop_timer, \
+		struct aml_ticker*: aml_stop_ticker, \
+		struct aml_signal*: aml_stop_signal, \
+		struct aml_work*: aml_stop_work, \
+		struct aml_idle*: aml_stop_idle \
+		)(aml, obj)
+
+#define aml_is_started(aml, obj) _Generic((obj), \
+		struct aml_handler*: aml_is_handler_started, \
+		struct aml_timer*: aml_is_timer_started, \
+		struct aml_ticker*: aml_is_ticker_started, \
+		struct aml_signal*: aml_is_signal_started, \
+		struct aml_work*: aml_is_work_started, \
+		struct aml_idle*: aml_is_idle_started \
+		)(aml, obj)
 
 struct aml;
 struct aml_handler;
@@ -96,30 +182,25 @@ void aml_interrupt(struct aml*);
  *
  * Returns how many references there were BEFORE the call.
  */
-int aml_ref(void* obj);
+int aml_loop_ref(struct aml* loop);
+int aml_handler_ref(struct aml_handler* obj);
+int aml_timer_ref(struct aml_timer* obj);
+int aml_ticker_ref(struct aml_ticker* obj);
+int aml_signal_ref(struct aml_signal* obj);
+int aml_work_ref(struct aml_work* obj);
+int aml_idle_ref(struct aml_idle* obj);
 
 /* Decrement the reference count by one.
  *
  * Returns how many references there are AFTER the call.
  */
-int aml_unref(void* obj);
-
-/* Create a new weak reference to the object.
- *
- * The reference object must be deleted using aml_weak_ref_del().
- */
-struct aml_weak_ref* aml_weak_ref_new(void* obj);
-
-/* Delete a weak reference created by aml_weak_ref_new().
- */
-void aml_weak_ref_del(struct aml_weak_ref* self);
-
-/* Try to get a new strong reference from a weak reference object.
- *
- * If the weak reference is still valid, the reference count on the returned
- * aml object will be increased by one. Otherwise NULL is returned.
- */
-void* aml_weak_ref_read(struct aml_weak_ref* self);
+int aml_loop_unref(struct aml* loop);
+int aml_handler_unref(struct aml_handler* obj);
+int aml_timer_unref(struct aml_timer* obj);
+int aml_ticker_unref(struct aml_ticker* obj);
+int aml_signal_unref(struct aml_signal* obj);
+int aml_work_unref(struct aml_work* obj);
+int aml_idle_unref(struct aml_idle* obj);
 
 /* The following calls create event handler objects.
  *
@@ -152,15 +233,29 @@ struct aml_idle* aml_idle_new(aml_callback_fn done_fn, void* userdata,
  * The fd returned from the main loop object can be used in other main loops to
  * monitor events on an aml main loop.
  */
-int aml_get_fd(const void* obj);
+int aml_loop_get_fd(const struct aml* self);
+int aml_handler_get_fd(const struct aml_handler* self);
 
 /* Associate random data with an object.
  *
  * If a free function is defined, it will be called to free the assigned
  * userdata when the object is freed as a result of aml_unref().
  */
-void aml_set_userdata(void* obj, void* userdata, aml_free_fn);
-void* aml_get_userdata(const void* obj);
+void aml_loop_set_userdata(struct aml* obj, void* userdata, aml_free_fn);
+void aml_handler_set_userdata(struct aml_handler* obj, void* userdata, aml_free_fn);
+void aml_timer_set_userdata(struct aml_timer* obj, void* userdata, aml_free_fn);
+void aml_ticker_set_userdata(struct aml_ticker* obj, void* userdata, aml_free_fn);
+void aml_signal_set_userdata(struct aml_signal* obj, void* userdata, aml_free_fn);
+void aml_work_set_userdata(struct aml_work* obj, void* userdata, aml_free_fn);
+void aml_idle_set_userdata(struct aml_idle* obj, void* userdata, aml_free_fn);
+
+void* aml_loop_get_userdata(const struct aml* obj);
+void* aml_handler_get_userdata(const struct aml_handler* obj);
+void* aml_timer_get_userdata(const struct aml_timer* obj);
+void* aml_ticker_get_userdata(const struct aml_ticker* obj);
+void* aml_signal_get_userdata(const struct aml_signal* obj);
+void* aml_work_get_userdata(const struct aml_work* obj);
+void* aml_idle_get_userdata(const struct aml_idle* obj);
 
 void aml_set_event_mask(struct aml_handler* obj, enum aml_event mask);
 enum aml_event aml_get_event_mask(const struct aml_handler* obj);
@@ -173,7 +268,8 @@ enum aml_event aml_get_revents(const struct aml_handler* obj);
  *
  * Calling this on a started timer/ticker yields undefined behaviour
  */
-void aml_set_duration(void* obj, uint64_t value);
+void aml_timer_set_duration(struct aml_timer* self, uint64_t value);
+void aml_ticker_set_duration(struct aml_ticker* self, uint64_t value);
 
 /* Start an event handler.
  *
@@ -181,7 +277,12 @@ void aml_set_duration(void* obj, uint64_t value);
  *
  * Returns: 0 on success, -1 if the handler is already started.
  */
-int aml_start(struct aml*, void* obj);
+int aml_start_handler(struct aml*, struct aml_handler*);
+int aml_start_timer(struct aml*, struct aml_timer*);
+int aml_start_ticker(struct aml*, struct aml_ticker*);
+int aml_start_signal(struct aml*, struct aml_signal*);
+int aml_start_work(struct aml*, struct aml_work*);
+int aml_start_idle(struct aml*, struct aml_idle*);
 
 /* Stop an event handler.
  *
@@ -193,13 +294,23 @@ int aml_start(struct aml*, void* obj);
  *
  * Returns: 0 on success, -1 if the handler is already stopped.
  */
-int aml_stop(struct aml*, void* obj);
+int aml_stop_handler(struct aml*, struct aml_handler*);
+int aml_stop_timer(struct aml*, struct aml_timer*);
+int aml_stop_ticker(struct aml*, struct aml_ticker*);
+int aml_stop_signal(struct aml*, struct aml_signal*);
+int aml_stop_work(struct aml*, struct aml_work*);
+int aml_stop_idle(struct aml*, struct aml_idle*);
 
 /* Check if an event handler is started.
  *
  * Returns: true if it has been started, false otherwise.
  */
-bool aml_is_started(struct aml*, void* obj);
+bool aml_is_handler_started(struct aml*, struct aml_handler* obj);
+bool aml_is_timer_started(struct aml*, struct aml_timer* obj);
+bool aml_is_ticker_started(struct aml*, struct aml_ticker* obj);
+bool aml_is_signal_started(struct aml*, struct aml_signal* obj);
+bool aml_is_work_started(struct aml*, struct aml_work* obj);
+bool aml_is_idle_started(struct aml*, struct aml_idle* obj);
 
 /* Get the signal assigned to a signal handler.
  */

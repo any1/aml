@@ -80,3 +80,20 @@ void aml_emit(struct aml* self, void* obj, uint32_t revents);
  * returned, if it is greater, then the time until next event is returned.
  */
 int aml_get_next_timeout(struct aml* self, int timeout);
+
+/* Create a new weak reference to the object.
+ *
+ * The reference object must be deleted using aml_weak_ref_del().
+ */
+struct aml_weak_ref* aml_weak_ref_new(void* obj);
+
+/* Delete a weak reference created by aml_weak_ref_new().
+ */
+void aml_weak_ref_del(struct aml_weak_ref* self);
+
+/* Try to get a new strong reference from a weak reference object.
+ *
+ * If the weak reference is still valid, the reference count on the returned
+ * aml object will be increased by one. Otherwise NULL is returned.
+ */
+void* aml_weak_ref_read(struct aml_weak_ref* self);

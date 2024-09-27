@@ -2,8 +2,9 @@
 #include <aml.h>
 #include <signal.h>
 
-static void on_tick(void* ticker)
+static void on_tick(void* obj)
 {
+	struct aml_ticker* ticker = obj;
 	int* count_ptr = aml_get_userdata(ticker);
 
 	*count_ptr += 1;

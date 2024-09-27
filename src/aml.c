@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 - 2022 Andri Yngvason
+ * Copyright (c) 2020 - 2024 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -96,6 +96,16 @@ struct aml_timer {
 	LIST_ENTRY(aml_timer) link;
 };
 
+struct aml_ticker {
+	struct aml_obj obj;
+
+	uint64_t timeout;
+	uint64_t deadline;
+	bool expired;
+
+	LIST_ENTRY(aml_timer) link;
+};
+
 LIST_HEAD(aml_timer_list, aml_timer);
 
 struct aml_signal {
@@ -160,6 +170,8 @@ EXPORT const char aml_version[] = "UNKNOWN";
 #endif
 
 EXPORT const int aml_unstable_abi_version = AML_UNSTABLE_API;
+
+static void aml__free(struct aml* self);
 
 EXPORT
 void aml_set_default(struct aml* aml)
@@ -272,10 +284,102 @@ void* aml_weak_ref_read(struct aml_weak_ref* self)
 	return obj;
 }
 
+static int aml_obj_ref(struct aml_obj* self)
+{
+	aml__ref_lock();
+	assert(self->ref >= 0);
+	int ref = self->ref++;
+	aml__ref_unlock();
+	return ref;
+}
+
+static int aml_obj_unref(struct aml_obj* self)
+{
+	aml__ref_lock();
+	int ref = --self->ref;
+	aml__ref_unlock();
+
+	assert(ref >= 0);
+	if (ref > 0)
+		goto done;
+
+	aml__ref_lock();
+	while (!LIST_EMPTY(&self->weak_refs)) {
+		struct aml_weak_ref* ref = LIST_FIRST(&self->weak_refs);
+		ref->obj = NULL;
+		LIST_REMOVE(ref, link);
+	}
+	aml__ref_unlock();
+
+	switch (self->type) {
+	case AML_OBJ_AML:
+		aml__free((struct aml*)self);
+		break;
+	case AML_OBJ_HANDLER:
+	case AML_OBJ_TIMER:
+	case AML_OBJ_TICKER:
+	case AML_OBJ_SIGNAL:
+	case AML_OBJ_WORK:
+	case AML_OBJ_IDLE:
+		if (self->free_fn)
+			self->free_fn(self->userdata);
+		free(self);
+		break;
+	default:
+		abort();
+		break;
+	}
+
+done:
+	return ref;
+}
+
+static void* aml_obj_get_userdata(const struct aml_obj* obj)
+{
+	return obj->userdata;
+}
+
+static void aml_obj_set_userdata(struct aml_obj* obj, void* userdata,
+		aml_free_fn free_fn)
+{
+	obj->userdata = userdata;
+	obj->free_fn = free_fn;
+}
+
+#define X(type, name) \
+EXPORT int aml_ ## name ## _ref(struct type* self) \
+{ \
+	return aml_obj_ref(&self->obj); \
+} \
+EXPORT int aml_ ## name ## _unref(struct type* self) \
+{ \
+	return aml_obj_unref(&self->obj); \
+} \
+EXPORT void aml_ ## name ## _set_userdata(struct type* self, void* ud, \
+		aml_free_fn free_fn) \
+{ \
+	aml_obj_set_userdata(&self->obj, ud, free_fn); \
+} \
+EXPORT void* aml_ ## name ## _get_userdata(const struct type* self) \
+{ \
+	return aml_obj_get_userdata(&self->obj); \
+}
+
+X(aml, loop)
+X(aml_handler, handler)
+X(aml_timer, timer)
+X(aml_ticker, ticker)
+X(aml_signal, signal)
+X(aml_work, work)
+X(aml_idle, idle)
+
+#undef X
+
 static void on_self_pipe_read(void* obj) {
-	struct aml* self = aml_get_userdata(obj);
+	struct aml_handler *handler = obj;
+	struct aml* self = aml_get_userdata(handler);
 	assert(self);
-	assert(self->self_pipe_rfd == aml_get_fd(obj));
+	assert(self->self_pipe_rfd == aml_get_fd(handler));
 
 	char dummy[256];
 	while (read(self->self_pipe_rfd, dummy, sizeof(dummy)) > 0);
@@ -531,8 +635,7 @@ static bool aml__obj_is_started_unlocked(struct aml* self, void* obj)
 	return false;
 }
 
-EXPORT
-bool aml_is_started(struct aml* self, void* obj)
+static bool aml_is_obj_started(struct aml* self, struct aml_obj* obj)
 {
 	pthread_mutex_lock(&self->obj_list_mutex);
 	bool result = aml__obj_is_started_unlocked(self, obj);
@@ -540,14 +643,14 @@ bool aml_is_started(struct aml* self, void* obj)
 	return result;
 }
 
-static int aml__obj_try_add(struct aml* self, void* obj)
+static int aml__obj_try_add(struct aml* self, struct aml_obj* obj)
 {
 	int rc = -1;
 
 	pthread_mutex_lock(&self->obj_list_mutex);
 
 	if (!aml__obj_is_started_unlocked(self, obj)) {
-		aml_ref(obj);
+		aml_obj_ref(obj);
 		LIST_INSERT_HEAD(&self->obj_list, (struct aml_obj*)obj, link);
 		rc = 0;
 	}
@@ -560,7 +663,7 @@ static int aml__obj_try_add(struct aml* self, void* obj)
 static void aml__obj_remove_unlocked(struct aml* self, void* obj)
 {
 	LIST_REMOVE((struct aml_obj*)obj, link);
-	aml_unref(obj);
+	aml_obj_unref(obj);
 }
 
 static void aml__obj_remove(struct aml* self, void* obj)
@@ -654,8 +757,7 @@ static int aml__start_unchecked(struct aml* self, void* obj)
 	return -1;
 }
 
-EXPORT
-int aml_start(struct aml* self, void* obj)
+static int aml_start_obj(struct aml* self, struct aml_obj* obj)
 {
 	if (aml__obj_try_add(self, obj) < 0)
 		return -1;
@@ -720,18 +822,40 @@ static int aml__stop_unchecked(struct aml* self, void* obj)
 	return -1;
 }
 
-EXPORT
-int aml_stop(struct aml* self, void* obj)
+static int aml_stop_obj(struct aml* self, struct aml_obj* obj)
 {
-	aml_ref(obj);
+	aml_obj_ref(obj);
 
 	if (aml__obj_try_remove(self, obj) >= 0)
 		aml__stop_unchecked(self, obj);
 
-	aml_unref(obj);
+	aml_obj_unref(obj);
 
 	return 0;
 }
+
+#define X(type) \
+EXPORT int aml_start_ ## type(struct aml* aml, struct aml_ ## type* obj) \
+{ \
+	return aml_start_obj(aml, &obj->obj); \
+} \
+EXPORT int aml_stop_ ## type(struct aml* aml, struct aml_ ## type* obj) \
+{ \
+	return aml_stop_obj(aml, &obj->obj); \
+} \
+EXPORT bool aml_is_ ## type ## _started(struct aml* aml, struct aml_ ## type* obj) \
+{ \
+	return aml_is_obj_started(aml, &obj->obj); \
+}
+
+X(handler)
+X(timer)
+X(ticker)
+X(signal)
+X(work)
+X(idle)
+
+#undef X
 
 static struct aml_timer* aml__get_timer_with_earliest_deadline(struct aml* self)
 {
@@ -789,14 +913,14 @@ static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 	/* A reference is kept here in case an object is stopped inside the
 	 * callback. We want the object to live until we're done with it.
 	 */
-	aml_ref(obj);
+	aml_obj_ref(obj);
 
-	if (aml_is_started(self, obj)) {
+	if (aml_is_obj_started(self, obj)) {
 		/* Single-shot objects must be stopped before the callback so
 		 * that they can be restarted from within the callback.
 		 */
 		if (aml__obj_is_single_shot(obj))
-			aml_stop(self, obj);
+			aml_stop_obj(self, obj);
 
 		if (obj->cb)
 			obj->cb(obj);
@@ -810,7 +934,7 @@ static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 			aml__mod_fd(self, handler);
 	}
 
-	aml_unref(obj);
+	aml_obj_unref(obj);
 }
 
 /* Might exit earlier than timeout. It's up to the user to check */
@@ -852,7 +976,7 @@ void aml_dispatch(struct aml* self)
 	struct aml_obj* obj;
 	while ((obj = aml__event_dequeue(self)) != NULL) {
 		aml__handle_event(self, obj);
-		aml_unref(obj);
+		aml_obj_unref(obj);
 	}
 
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
@@ -883,19 +1007,6 @@ void aml_exit(struct aml* self)
 		self->backend.exit(self->state);
 }
 
-EXPORT
-int aml_ref(void* obj)
-{
-	struct aml_obj* self = obj;
-
-	aml__ref_lock();
-	assert(self->ref >= 0);
-	int ref = self->ref++;
-	aml__ref_unlock();
-
-	return ref;
-}
-
 static void aml__free(struct aml* self)
 {
 	while (!LIST_EMPTY(&self->obj_list)) {
@@ -913,7 +1024,7 @@ static void aml__free(struct aml* self)
 	while (!TAILQ_EMPTY(&self->event_queue)) {
 		struct aml_obj* obj = TAILQ_FIRST(&self->event_queue);
 		TAILQ_REMOVE(&self->event_queue, obj, event_link);
-		aml_unref(obj);
+		aml_obj_unref(obj);
 	}
 
 	pthread_mutex_destroy(&self->timer_list_mutex);
@@ -921,112 +1032,6 @@ static void aml__free(struct aml* self)
 	pthread_mutex_destroy(&self->event_queue_mutex);
 
 	free(self);
-}
-
-static void aml__free_handler(struct aml_handler* self)
-{
-	if (self->obj.free_fn)
-		self->obj.free_fn(self->obj.userdata);
-
-	free(self);
-}
-
-static void aml__free_timer(struct aml_timer* self)
-{
-	if (self->obj.free_fn)
-		self->obj.free_fn(self->obj.userdata);
-
-	free(self);
-}
-
-static void aml__free_signal(struct aml_signal* self)
-{
-	if (self->obj.free_fn)
-		self->obj.free_fn(self->obj.userdata);
-
-	free(self);
-}
-
-static void aml__free_work(struct aml_work* self)
-{
-	if (self->obj.free_fn)
-		self->obj.free_fn(self->obj.userdata);
-
-	free(self);
-}
-
-static void aml__free_idle(struct aml_idle* self)
-{
-	if (self->obj.free_fn)
-		self->obj.free_fn(self->obj.userdata);
-
-	free(self);
-}
-
-EXPORT
-int aml_unref(void* obj)
-{
-	struct aml_obj* self = obj;
-
-	aml__ref_lock();
-	int ref = --self->ref;
-	aml__ref_unlock();
-
-	assert(ref >= 0);
-	if (ref > 0)
-		goto done;
-
-	aml__ref_lock();
-	while (!LIST_EMPTY(&self->weak_refs)) {
-		struct aml_weak_ref* ref = LIST_FIRST(&self->weak_refs);
-		ref->obj = NULL;
-		LIST_REMOVE(ref, link);
-	}
-	aml__ref_unlock();
-
-	switch (self->type) {
-	case AML_OBJ_AML:
-		aml__free(obj);
-		break;
-	case AML_OBJ_HANDLER:
-		aml__free_handler(obj);
-		break;
-	case AML_OBJ_TIMER:
-		/* fallthrough */
-	case AML_OBJ_TICKER:
-		aml__free_timer(obj);
-		break;
-	case AML_OBJ_SIGNAL:
-		aml__free_signal(obj);
-		break;
-	case AML_OBJ_WORK:
-		aml__free_work(obj);
-		break;
-	case AML_OBJ_IDLE:
-		aml__free_idle(obj);
-		break;
-	default:
-		abort();
-		break;
-	}
-
-done:
-	return ref;
-}
-
-EXPORT
-void* aml_get_userdata(const void* obj)
-{
-	const struct aml_obj* aml_obj = obj;
-	return aml_obj->userdata;
-}
-
-EXPORT
-void aml_set_userdata(void* obj, void* userdata, aml_free_fn free_fn)
-{
-	struct aml_obj* aml_obj = obj;
-	aml_obj->userdata = userdata;
-	aml_obj->free_fn = free_fn;
 }
 
 void aml_emit(struct aml* self, void* ptr, uint32_t revents)
@@ -1047,7 +1052,7 @@ void aml_emit(struct aml* self, void* ptr, uint32_t revents)
 	pthread_mutex_lock(&self->event_queue_mutex);
 	if (obj->n_events++ == 0)
 		TAILQ_INSERT_TAIL(&self->event_queue, obj, event_link);
-	aml_ref(obj);
+	aml_obj_ref(obj);
 	pthread_mutex_unlock(&self->event_queue_mutex);
 	pthread_sigmask(SIG_SETMASK, &sig_old, NULL);
 }
@@ -1074,22 +1079,16 @@ enum aml_event aml_get_revents(const struct aml_handler* handler)
 }
 
 EXPORT
-int aml_get_fd(const void* ptr)
+int aml_loop_get_fd(const struct aml* self)
 {
-	const struct aml_obj* obj = ptr;
+	return self->backend.get_fd ?
+		self->backend.get_fd(self->state) : -1;
+}
 
-	switch (obj->type) {
-	case AML_OBJ_AML:;
-		const struct aml* aml = ptr;
-		return aml->backend.get_fd ?
-			aml->backend.get_fd(aml->state) : -1;
-	case AML_OBJ_HANDLER:
-		return ((struct aml_handler*)ptr)->fd;
-	default:
-		break;
-	}
-
-	return -1;
+EXPORT
+int aml_handler_get_fd(const struct aml_handler* self)
+{
+	return self->fd;
 }
 
 EXPORT
@@ -1121,18 +1120,13 @@ void* aml_get_backend_state(const struct aml* self)
 }
 
 EXPORT
-void aml_set_duration(void* ptr, uint64_t duration)
+void aml_timer_set_duration(struct aml_timer* self, uint64_t duration)
 {
-	struct aml_obj* obj = ptr;
+	self->timeout = duration;
+}
 
-	switch (obj->type) {
-	case AML_OBJ_TIMER: /* fallthrough */
-	case AML_OBJ_TICKER:
-		((struct aml_timer*)ptr)->timeout = duration;
-		return;
-	default:
-		break;
-	}
-
-	abort();
+EXPORT
+void aml_ticker_set_duration(struct aml_ticker* self, uint64_t duration)
+{
+	self->timeout = duration;
 }
