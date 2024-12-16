@@ -93,7 +93,7 @@ static int kq_poll(void* state, int timeout)
 	struct kevent events[16];
 	size_t max_events = sizeof(events) / sizeof(events[0]);
 
-	int nfds = kevent(self->fd, NULL, 0, events, max_events, &ts);
+	int nfds = kevent(self->fd, NULL, 0, events, max_events, timeout >= 0 ? &ts : NULL);
 	for (int i = 0; i < nfds; ++i)
 		kq_emit_event(self, &events[i]);
 		
