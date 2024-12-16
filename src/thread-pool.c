@@ -96,8 +96,9 @@ static void* worker_fn(void* context)
 	sigfillset(&ss);
 	sigdelset(&ss, SIGCHLD);
 	pthread_sigmask(SIG_BLOCK, &ss, NULL);
-
+#ifndef __ANDROID__
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+#endif
 
 	while (1) {
 		struct default_work* work = dequeue_work();
