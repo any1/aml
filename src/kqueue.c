@@ -180,8 +180,17 @@ static int kq_set_deadline(void* state, uint64_t deadline)
 	struct kq_state* self = state;
 
 	struct kevent event;
+#ifdef __MACH__
+	struct timespec ts = { 0 };
+	clock_gettime(CLOCK_REALTIME, &ts);
+	uint64_t current_time = ts.tv_sec * UINT64_C(1000000) + ts.tv_nsec / UINT64_C(1000);
+	uint64_t relative_deadline = deadline > current_time ? deadline - current_time : 0;
+	EV_SET(&event, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT,
+			NOTE_USECONDS, relative_deadline, NULL);
+#else
 	EV_SET(&event, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT,
 			NOTE_USECONDS | NOTE_ABSTIME, deadline, NULL);
+#endif
 
 	return kevent(self->fd, &event, 1, NULL, 0, NULL);
 }
