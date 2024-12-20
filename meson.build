@@ -43,7 +43,7 @@ add_project_arguments(c_args, language: 'c')
 
 cc = meson.get_compiler('c')
 
-librt = cc.find_library('rt', required: true)
+librt = cc.find_library('rt', required: false)
 threads = dependency('threads')
 
 inc = include_directories('include')
