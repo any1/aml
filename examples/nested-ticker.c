@@ -6,7 +6,7 @@
 
 static int do_exit = 0;
 
-static void on_tick(void* ticker)
+static void on_tick(struct aml_ticker* ticker)
 {
 	int* count_ptr = aml_get_userdata(ticker);
 
@@ -18,7 +18,7 @@ static void on_tick(void* ticker)
 		aml_exit(aml_get_default());
 }
 
-static void on_sigint(void* sig)
+static void on_sigint(struct aml_signal* sig)
 {
 	do_exit = 1;
 }
