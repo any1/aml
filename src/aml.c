@@ -791,14 +791,15 @@ static void aml__handle_event(struct aml* self, struct aml_obj* obj)
 	 */
 	aml_ref(obj);
 
-	if (obj->cb && aml_is_started(self, obj)) {
+	if (aml_is_started(self, obj)) {
 		/* Single-shot objects must be stopped before the callback so
 		 * that they can be restarted from within the callback.
 		 */
 		if (aml__obj_is_single_shot(obj))
 			aml_stop(self, obj);
 
-		obj->cb(obj);
+		if (obj->cb)
+			obj->cb(obj);
 	}
 
 	if (obj->type == AML_OBJ_HANDLER) {
