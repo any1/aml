@@ -16,17 +16,6 @@
 
 #pragma once
 
-#ifndef AML_UNSTABLE_API
-#define AML_UNSTABLE_API 0
-#endif
-
-/* Something like this is necessary when changes are made that don't break the
- * build but will cause nasty bugs if ignored.
- */
-#if AML_UNSTABLE_API != 1
-#error "API has changed! Please, observe the changes and acknowledge by defining AML_UNSTABLE_API as 1 before including aml.h"
-#endif
-
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -135,7 +124,6 @@ enum aml_event {
 typedef void (*aml_free_fn)(void*);
 
 extern const char aml_version[];
-extern const int aml_unstable_abi_version;
 
 /* Create a new main loop instance */
 struct aml* aml_new(void);

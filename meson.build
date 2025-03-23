@@ -1,7 +1,7 @@
 project(
 	'aml',
 	'c',
-	version: '0.3.0',
+	version: '1.0.0-rc0',
 	license: 'ISC',
 	default_options: [
 		'c_std=c11',
@@ -17,8 +17,6 @@ c_args = [
 	'-DPROJECT_VERSION="@0@"'.format(meson.project_version()),
 	'-D_POSIX_C_SOURCE=200809L',
 	'-fvisibility=hidden',
-	'-DAML_UNSTABLE_API=1',
-
 	'-Wmissing-prototypes',
 	'-Wno-unused-parameter',
 ]
@@ -74,7 +72,7 @@ dependencies = [
 aml = library(
 	'aml',
 	sources,
-	version: '0.0.0',
+	version: '1.0.0',
 	dependencies: dependencies,
 	include_directories: inc,
 	install: not is_static_subproject,
