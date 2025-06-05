@@ -154,8 +154,7 @@ struct aml {
 
 static struct aml* aml__default = NULL;
 
-// TODO: Properly initialise this?
-static pthread_mutex_t aml__ref_mutex;
+static pthread_mutex_t aml__ref_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 extern struct aml_backend implementation;
 
