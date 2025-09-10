@@ -85,6 +85,8 @@ aml_dep = declare_dependency(
 	link_with: aml,
 )
 
+meson.override_dependency('aml', aml_dep)
+
 if get_option('examples')
 	subdir('examples')
 endif
