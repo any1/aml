@@ -54,7 +54,7 @@ sources = [
 ]
 
 have_epoll = cc.has_header_symbol('sys/epoll.h', 'epoll_create')
-have_kqueue = cc.has_header_symbol('sys/event.h', 'kqueue')
+have_kqueue = cc.has_header_symbol('sys/event.h', 'kqueue', prefix: '#include <sys/types.h>')
 
 if have_epoll
 	sources += 'src/epoll.c'
