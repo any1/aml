@@ -52,6 +52,8 @@ static int enqueue_work(struct aml* aml, struct aml_work* work, int broadcast);
 
 static void reap_threads(void)
 {
+	assert(thread_pool != NULL);
+
 	enqueue_work(NULL, NULL, 1);
 
 	for (int i = 0; i < n_threads; ++i)
@@ -59,6 +61,7 @@ static void reap_threads(void)
 
 	free(thread_pool);
 	thread_pool = NULL;
+	n_threads = 0;
 
 	pthread_mutex_destroy(&work_queue_mutex);
 	pthread_cond_destroy(&work_queue_cond);
