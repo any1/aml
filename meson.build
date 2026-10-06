@@ -21,8 +21,9 @@ c_args = [
 	'-Wno-unused-parameter',
 ]
 
+fs = import('fs')
 git = find_program('git', native: true, required: false)
-if git.found()
+if git.found() and fs.exists('.git')
 	git_describe = run_command([git, 'describe', '--tags', '--long'],
 		check: false)
 	git_branch = run_command([git, 'rev-parse', '--abbrev-ref', 'HEAD'],
