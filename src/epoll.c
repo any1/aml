@@ -98,7 +98,7 @@ static void epoll_emit_event(struct epoll_state* self,
 	}
 
 	enum aml_event aml_events = AML_EVENT_NONE;
-	if (event->events & EPOLLIN)
+	if (event->events & (EPOLLIN | EPOLLHUP | EPOLLERR))
 		aml_events |= AML_EVENT_READ;
 	if (event->events & EPOLLOUT)
 		aml_events |= AML_EVENT_WRITE;
