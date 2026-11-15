@@ -48,11 +48,12 @@ static void* epoll_new_state(struct aml* aml)
 
 	self->aml = aml;
 
-	self->epoll_fd = epoll_create(16);
+	self->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
 	if (self->epoll_fd < 0)
 		goto epoll_failure;
 
-	self->timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+	self->timer_fd = timerfd_create(CLOCK_MONOTONIC,
+			TFD_NONBLOCK | TFD_CLOEXEC);
 	if (self->timer_fd < 0)
 		goto timer_fd_failure;
 

@@ -23,6 +23,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <signal.h>
+#include <fcntl.h>
 #include <assert.h>
 
 struct kq_state {
@@ -41,6 +42,8 @@ static void* kq_new_state(struct aml* aml)
 	self->fd = kqueue();
 	if (self->fd < 0)
 		goto kqueue_failure;
+
+	fcntl(self->fd, F_SETFD, fcntl(self->fd, F_GETFD, 0) | FD_CLOEXEC);
 
 	return self;
 

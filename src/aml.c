@@ -223,6 +223,11 @@ static void aml__dont_block(int fd)
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
 
+static void aml__set_cloexec(int fd)
+{
+	fcntl(fd, F_SETFD, fcntl(fd, F_GETFD, 0) | FD_CLOEXEC);
+}
+
 static uint64_t aml__gettime_us(struct aml* self)
 {
 	struct timespec ts = { 0 };
@@ -400,6 +405,9 @@ static int aml__init_self_pipe(struct aml* self)
 
 	aml__dont_block(fds[0]);
 	aml__dont_block(fds[1]);
+
+	aml__set_cloexec(fds[0]);
+	aml__set_cloexec(fds[1]);
 
 	self->self_pipe_rfd = fds[0];
 	self->self_pipe_wfd = fds[1];
