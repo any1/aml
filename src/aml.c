@@ -973,7 +973,7 @@ void aml_dispatch(struct aml* self)
 
 	struct aml_timer* earliest = aml__get_timer_with_earliest_deadline(self);
 	if (earliest) {
-		assert(earliest->deadline > now);
+		assert(earliest->deadline >= now);
 		aml__set_deadline(self, earliest->deadline);
 	}
 
